@@ -30,7 +30,7 @@ const anc = location.ancestorOrigins && location.ancestorOrigins.length ? locati
 const AUTORISEE = window.parent !== window && !!anc && EXT.includes(anc); // seulement dans un iframe posé directement par l'extension
 const msg = t => { const m = document.getElementById("msg"); if (m) m.textContent = t; };
 const envoyer = m => { if (P.parent && P.origine) P.parent.postMessage(Object.assign({ v: 1 }, m), P.origine); };
-const erreur = raison => { if (P.erreurDite) return; P.erreurDite = true; envoyer({ type: "erreur", raison }); msg(""); };
+const erreur = raison => { if (P.erreurDite) return; P.erreurDite = true; envoyer({ type: "erreur", raison }); msg(""); }; // une seule fois, au chargement comme pendant la consultation
 window.gm_authFailure = () => erreur("cle-refusee");
 const ce = console.error.bind(console); console.error = (...a) => { const t = a.map(String).join(" "); if (/OverQuota|over_query_limit|quota/i.test(t)) erreur("quota"); else if (/RefererNotAllowed|ApiNotActivated|BillingNotEnabled|InvalidKey|ApiTargetBlocked/i.test(t)) erreur("cle-refusee"); ce(...a); };
 const ll = (lat, lon, alt) => ({ lat: +lat, lng: +lon, altitude: +alt || 0 });
@@ -47,13 +47,12 @@ function charger() {
     const c = (P.init && P.init.camera) || { center: { lat: 46.6, lon: 2.4, alt: 0 }, range: 900000, tilt: 0, heading: 0 };
     P.carte = new P.lib.Map3DElement({ center: ll(c.center.lat, c.center.lon, c.center.alt), range: c.range, tilt: c.tilt, heading: c.heading || 0, mode: P.lib.MapMode.SATELLITE, defaultUIHidden: true, gestureHandling: "GREEDY" });
     P.carte.addEventListener("gmp-error", () => erreur("carte"));
-    P.carte.addEventListener("gmp-steadychange", e => { P.vue = true; if (e.isSteady && !P.chargee) { P.chargee = true; envoyer({ type: "chargee" }); } if (e.isSteady) envoyer({ type: "stable" }); });
+    P.carte.addEventListener("gmp-steadychange", e => { if (e.isSteady && !P.chargee) { P.chargee = true; envoyer({ type: "chargee" }); } if (e.isSteady) envoyer({ type: "stable" }); });
     P.carte.addEventListener("gmp-click", e => { const p = e.position; if (p) envoyer({ type: "clic", lat: p.lat, lon: p.lng, alt: p.altitude }); });
     let t = 0; const cam = () => { clearTimeout(t); t = setTimeout(() => { const k = P.carte, x = k.center; if (x) envoyer({ type: "camera", center: { lat: x.lat, lon: x.lng, alt: x.altitude }, range: k.range, tilt: k.tilt, heading: k.heading }); }, 150); };
     ["gmp-centerchange", "gmp-rangechange", "gmp-tiltchange", "gmp-headingchange"].forEach(ev => P.carte.addEventListener(ev, cam));
     document.getElementById("msg").remove(); document.body.append(P.carte);
-    setTimeout(() => { if (!P.chargee && !P.erreurDite) { P.chargee = true; envoyer({ type: "chargee" }); } }, 8000); // affichée sans erreur depuis 8 s : la carte est là (les tuiles continuent d'arriver)
-    setTimeout(() => { if (!P.vue) erreur("delai"); }, 45000);
+    setTimeout(() => { if (!P.chargee) erreur("delai"); }, 45000); // « chargée » seulement sur un vrai signal de stabilité de Google ; sans lui, échec de chargement
     P.enAttente.splice(0).forEach(traiter);
   }).catch(() => erreur("script"));
 }
