@@ -142,14 +142,32 @@ const finGlisser = e => { if (!GL || (e && e.pointerId !== GL.id)) return; if (e
 window.addEventListener("pointerup", finGlisser, true); window.addEventListener("pointercancel", finGlisser, true);
 window.addEventListener("contextmenu", e => { if (P.carte) e.preventDefault(); }, true);
 function vider(nom) { for (const e of P.couches[nom]) e.remove(); P.couches[nom] = []; }
-const anneau = r => r.map(([lon, lat]) => ({ lat, lng: lon }));
+/*
+ * Contours POSÉS AU SOL (demande de Laurent du 04/10/2026) : une ligne fine collée au relief, jamais un mur, jamais un remplissage.
+ * - altitudeMode CLAMP_TO_GROUND + extruded false : le trait suit le terrain, rien ne descend jusqu'au sol ;
+ * - drawsOccludedSegments false : ce qui passe derrière une colline ou un toit reste caché (sinon le trait traverse le relief) ;
+ * - découpage : une ligne collée au sol ne suit le terrain qu'à ses sommets. Les côtés longs sont coupés tous PAS_SOL mètres pour que
+ *   le contour épouse une pente (Vence) au lieu de la traverser.
+ */
+const AU_SOL = { altitudeMode: "CLAMP_TO_GROUND", extruded: false, drawsOccludedSegments: false };
+const PAS_SOL = 10;
+function colleAuSol(path) {
+  const out = [];
+  for (let i = 0; i < path.length; i++) {
+    const a = path[i], b = path[i + 1]; out.push(a); if (!b) continue;
+    const dx = (b.lng - a.lng) * 111320 * Math.cos(a.lat * Math.PI / 180), dy = (b.lat - a.lat) * 111200, n = Math.min(60, Math.floor(Math.hypot(dx, dy) / PAS_SOL));
+    for (let k = 1; k < n; k++) out.push({ lat: a.lat + (b.lat - a.lat) * k / n, lng: a.lng + (b.lng - a.lng) * k / n });
+  }
+  return out;
+}
+const anneau = r => colleAuSol(r.map(([lon, lat]) => ({ lat, lng: lon })));
 const garder = (nom, e) => { if (!P.visible) e.style.display = "none"; P.carte.append(e); P.couches[nom].push(e); };
 function dessiner(d) {
   const L = P.lib;
-  if ("parcelles" in d) { vider("parcelles"); for (const r of d.parcelles || []) garder("parcelles", new L.Polyline3DElement({ path: anneau(r), altitudeMode: "CLAMP_TO_GROUND", strokeColor: "rgba(255,255,255,.8)", strokeWidth: 1.5, drawsOccludedSegments: true })); }
-  if ("selection" in d) { vider("selection"); for (const r of d.selection || []) garder("selection", new L.Polyline3DElement({ path: anneau(r), altitudeMode: "CLAMP_TO_GROUND", strokeColor: "#FFD60A", strokeWidth: 4, drawsOccludedSegments: true, zIndex: 2 })); }
-  if ("piscines" in d) { vider("piscines"); for (const r of d.piscines || []) garder("piscines", new L.Polyline3DElement({ path: anneau(r), altitudeMode: "CLAMP_TO_GROUND", strokeColor: "#4FD8FF", strokeWidth: 1.2, drawsOccludedSegments: false })); }
-  if ("cercle" in d) { vider("cercle"); for (const c of d.cercle ? [].concat(d.cercle) : []) { const n = 96, R = Math.PI / 180, path = Array.from({ length: n + 1 }, (_, i) => { const a = i * 2 * Math.PI / n; return { lat: c.lat + c.rayon * Math.cos(a) / 111200, lng: c.lon + c.rayon * Math.sin(a) / (111320 * Math.cos(c.lat * R)) }; }); garder("cercle", new L.Polyline3DElement({ path, altitudeMode: "CLAMP_TO_GROUND", strokeColor: c.couleur || "#FF5A00", strokeWidth: 2.5, drawsOccludedSegments: true })); } }
+  if ("parcelles" in d) { vider("parcelles"); for (const r of d.parcelles || []) garder("parcelles", new L.Polyline3DElement(Object.assign({ path: anneau(r), strokeColor: "rgba(255,255,255,.75)", strokeWidth: 1 }, AU_SOL))); }
+  if ("selection" in d) { vider("selection"); for (const r of d.selection || []) garder("selection", new L.Polyline3DElement(Object.assign({ path: anneau(r), strokeColor: "#FFD60A", strokeWidth: 2.5, zIndex: 2 }, AU_SOL))); } // la parcelle du résultat : le même contour, un peu plus épais
+  if ("piscines" in d) { vider("piscines"); for (const r of d.piscines || []) garder("piscines", new L.Polyline3DElement(Object.assign({ path: anneau(r), strokeColor: "#4FD8FF", strokeWidth: 1 }, AU_SOL))); }
+  if ("cercle" in d) { vider("cercle"); for (const c of d.cercle ? [].concat(d.cercle) : []) { const n = 96, R = Math.PI / 180, path = Array.from({ length: n + 1 }, (_, i) => { const a = i * 2 * Math.PI / n; return { lat: c.lat + c.rayon * Math.cos(a) / 111200, lng: c.lon + c.rayon * Math.sin(a) / (111320 * Math.cos(c.lat * R)) }; }); garder("cercle", new L.Polyline3DElement(Object.assign({ path, strokeColor: c.couleur || "#FF5A00", strokeWidth: 1.5 }, AU_SOL))); } }
   if ("reperes" in d) { vider("reperes"); for (const r of d.reperes || []) { const e = new L.Marker3DInteractiveElement({ position: ll(r.lat, r.lon, r.hauteur || 18), altitudeMode: "RELATIVE_TO_GROUND", extruded: true }); e.append(new P.mk.PinElement({ glyphText: String(r.n), background: r.sel ? "#FF5A00" : "#2B44D6", borderColor: "#070C28", glyphColor: "#fff", scale: r.sel ? 1.3 : 1 })); e.addEventListener("gmp-click", () => envoyer({ type: "repere", n: r.n, cle: r.cle })); garder("reperes", e); } }
   if ("visible" in d) { P.visible = !!d.visible; for (const nom of Object.keys(P.couches)) for (const e of P.couches[nom]) e.style.display = P.visible ? "" : "none"; }
 }
@@ -157,7 +175,9 @@ function camera(d) {
   const k = P.carte; arreter(); if (k.stopCameraAnimation) k.stopCameraAnimation(); const p = pivot();
   const end = { center: d.center ? ll(d.center.lat, d.center.lon, d.center.alt) : p.center, range: d.range ?? p.range, tilt: d.tilt ?? +k.tilt, heading: d.heading ?? +k.heading };
   PV.center = end.center; PV.range = end.range; // le point visé voulu par la vue
-  if (!(d.duree > 0)) { Object.assign(k, end); return; }
+  // pose immédiate : Google rend parfois tout de suite la caméra par sa position (distance nulle). La caméra est reposée sur le point visé
+  // et la distance voulus, sans changer l'image : la distance ne retombe jamais à zéro (ouverture, « Centrer », changement de candidate).
+  if (!(d.duree > 0)) { Object.assign(k, end); const r = n => { if (GL || A.raf || P.vol || +k.range > 5 || n > 3) return; Object.assign(k, end); setTimeout(() => r(n + 1), 150); }; setTimeout(() => r(0), 100); return; }
   // après un vol, Google décrit la caméra par sa propre position (distance nulle) : son zoom et ses gestes partent alors de travers. À l'arrivée, la
   // caméra est reposée sur le point visé et la distance voulus (même image).
   // Google applique son état final juste après « gmp-animationend » : la caméra est reposée un peu après, et encore si la distance est restée nulle
@@ -166,6 +186,7 @@ function camera(d) {
   const fin = e => { if (e && performance.now() - t0 < d.duree * 0.9) return; /* fin d'une animation précédente */ k.removeEventListener("gmp-animationend", fin); if (P.vol !== fin) return; P.vol = null; setTimeout(() => reposer(0), 80); };
   P.vol = fin; k.addEventListener("gmp-animationend", fin); setTimeout(fin, d.duree + 400); k.flyCameraTo({ endCamera: end, durationMillis: d.duree });
 }
+window.__pivot3d = () => { const k = P.carte; if (!k) return null; const p = pivot(); return { lat: p.center && p.center.lat, lon: p.center && (p.center.lng ?? p.center.lon), alt: p.center && p.center.altitude, range: p.range, tilt: +k.tilt, heading: +k.heading, rangeCarte: +k.range }; }; // essais seulement : ce que la page garde comme point visé et distance
 function traiter(d) {
   if (!P.carte) { P.enAttente.push(d); return; }
   if (d.type === "camera") camera(d); else if (d.type === "couches") dessiner(d);
