@@ -24,7 +24,7 @@ html,body{margin:0;height:100%;background:#1a2340;overflow:hidden}gmp-map-3d{pos
 const CLE = ""; // posée à la publication (tools/publier-page-3d.mjs), jamais dans le dépôt du Localisateur
 const VERSION = "beta";
 const EXT = ["chrome-extension://bjoapcmbjmollccjocdacbobdpfekmgk"]; // l'extension (identifiant fixé par la clé du manifeste)
-// Protocole v1. Extension → page : init, camera, couches, orbite, stop, gestes. Page → extension : pret, chargee, stable, erreur, clic, camera, repere.
+// Protocole v1. Extension → page : init, camera, couches, orbite, stop, gestes. Page → extension : pret, google, chargee, stable, erreur, clic, camera, repere.
 const P = { parent: null, origine: null, carte: null, lib: null, mk: null, couches: { parcelles: [], selection: [], reperes: [], cercle: [], piscines: [] }, visible: true, enAttente: [], chargee: false };
 const anc = location.ancestorOrigins && location.ancestorOrigins.length ? location.ancestorOrigins[0] : null;
 const AUTORISEE = window.parent !== window && !!anc && EXT.includes(anc); // seulement dans un iframe posé directement par l'extension
@@ -37,6 +37,7 @@ const ll = (lat, lon, alt) => ({ lat: +lat, lng: +lon, altitude: +alt || 0 });
 
 function charger() {
   if (!CLE || /^__/.test(CLE)) return erreur("sans-cle");
+  envoyer({ type: "google" }); // la carte part chez Google : l'extension la compte (plafond du poste, journal)
   return new Promise((ok, ko) => {
     window.__gm = ok; const s = document.createElement("script");
     s.src = "https://maps.googleapis.com/maps/api/js?" + new URLSearchParams({ key: CLE, v: VERSION, libraries: "maps3d,marker", loading: "async", callback: "__gm", language: "fr", region: "FR" });
