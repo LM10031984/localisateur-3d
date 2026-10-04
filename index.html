@@ -24,7 +24,7 @@ html,body{margin:0;height:100%;background:#1a2340;overflow:hidden}gmp-map-3d{pos
 const CLE = "AIzaSyCC--aFNVO_o5rFzVQwQ4BxvZfqvZu9Ycs"; // posée à la publication (tools/publier-page-3d.mjs), jamais dans le dépôt du Localisateur
 const VERSION = "beta";
 const EXT = ["chrome-extension://bjoapcmbjmollccjocdacbobdpfekmgk"]; // l'extension : identifiant calculé à la publication depuis la clé du manifeste (tools/publier-page-3d.mjs), jamais écrit à la main
-// Protocole v1. Extension → page : preparer, init, camera, couches, orbite, stop, gestes. Page → extension : pret, refus, etape, google, chargee, touche, stable, erreur, clic, camera, repere.
+// Protocole v1. Extension → page : preparer, init, camera, couches, orbite, stop, gestes, incliner, ctrl. Page → extension : pret, refus, etape, google, chargee, touche, stable, erreur, clic, camera, repere.
 // « preparer » : le script et la bibliothèque Google sont chargés, SANS carte (Google facture le chargement d'une carte, pas celui de la bibliothèque).
 // « chargee » : premier affichage de la carte (la 3D s'affine ensuite toute seule) ; « etape » : l'heure de chaque étape (journal des temps de l'extension).
 const P = { parent: null, origine: null, carte: null, lib: null, mk: null, couches: { parcelles: [], selection: [], reperes: [], cercle: [], piscines: [] }, visible: true, enAttente: [], chargee: false };
@@ -43,11 +43,11 @@ const ll = (lat, lon, alt) => ({ lat: +lat, lng: +lon, altitude: +alt || 0 });
  * Earth, tuiles 3D). On compte des appels, on ne lit jamais un pixel. Repli : le premier signal de stabilité de Google (gmp-steadychange). Jamais une minuterie.
  * Mesuré le 04/10/2026 : premier affichage environ 0,5 s après la création de la carte, stabilité 2 à 8 s après.
  */
-const A = { donnees: false, fait: false, attente: false };
-function affichee() { if (A.fait || !P.carte) return; A.fait = true; P.chargee = true; etape("affichage"); envoyer({ type: "chargee" }); }
-try { new PerformanceObserver(l => { if (!A.donnees && l.getEntries().some(e => /\/rt\/earth\/NodeData|3dtiles|\.glb(\?|$)/.test(e.name))) A.donnees = true; }).observe({ type: "resource", buffered: true }); } catch (e) {}
+const AF = { donnees: false, fait: false, attente: false };
+function affichee() { if (AF.fait || !P.carte) return; AF.fait = true; P.chargee = true; etape("affichage"); envoyer({ type: "chargee" }); }
+try { new PerformanceObserver(l => { if (!AF.donnees && l.getEntries().some(e => /\/rt\/earth\/NodeData|3dtiles|\.glb(\?|$)/.test(e.name))) AF.donnees = true; }).observe({ type: "resource", buffered: true }); } catch (e) {}
 for (const C of [window.WebGL2RenderingContext, window.WebGLRenderingContext]) if (C) for (const f of ["drawElements", "drawArrays", "drawElementsInstanced", "drawArraysInstanced", "drawRangeElements"]) {
-  const o = C.prototype[f]; if (o) C.prototype[f] = function (...a) { if (A.donnees && !A.fait && !A.attente && P.carte) { A.attente = true; requestAnimationFrame(affichee); } return o.apply(this, a); }; }
+  const o = C.prototype[f]; if (o) C.prototype[f] = function (...a) { if (AF.donnees && !AF.fait && !AF.attente && P.carte) { AF.attente = true; requestAnimationFrame(affichee); } return o.apply(this, a); }; }
 let bibli = null;
 /** Le script et la bibliothèque Google (une fois) : aucune carte, rien de facturé. */
 function bibliotheque() {
@@ -69,13 +69,78 @@ function charger() {
     P.carte.addEventListener("gmp-error", () => erreur("carte"));
     let stableDit = false; P.carte.addEventListener("gmp-steadychange", e => { if (e.isSteady) { affichee(); if (!stableDit) { stableDit = true; etape("stable"); } envoyer({ type: "stable" }); } });
     P.carte.addEventListener("gmp-click", e => { const p = e.position; if (p) envoyer({ type: "clic", lat: p.lat, lon: p.lng, alt: p.altitude }); });
-    let t = 0; const cam = () => { clearTimeout(t); t = setTimeout(() => { const k = P.carte, x = k.center; if (x) envoyer({ type: "camera", center: { lat: x.lat, lon: x.lng, alt: x.altitude }, range: k.range, tilt: k.tilt, heading: k.heading }); }, 150); };
+    let t = 0; const cam = () => { clearTimeout(t); t = setTimeout(() => { const k = P.carte, x = k.center; noterPivot(); if (x) envoyer({ type: "camera", center: { lat: x.lat, lon: x.lng, alt: x.altitude }, range: +k.range > 5 ? k.range : PV.range || k.range, tilt: k.tilt, heading: k.heading }); }, 150); };
     ["gmp-centerchange", "gmp-rangechange", "gmp-tiltchange", "gmp-headingchange"].forEach(ev => P.carte.addEventListener(ev, cam));
     document.getElementById("msg").remove(); document.body.append(P.carte); etape("carte");
-    setTimeout(() => { if (!A.fait) erreur("delai"); }, 45000); // sans premier affichage de Google : échec de chargement ; après, les pannes (gmp-error, clé, quota) restent signalées
+    setTimeout(() => { if (!AF.fait) erreur("delai"); }, 45000); // sans premier affichage de Google : échec de chargement ; après, les pannes (gmp-error, clé, quota) restent signalées
     P.enAttente.splice(0).forEach(traiter);
   }).catch(() => {});
 }
+/*
+ * Caméra animée par la page elle-même, image par image (demandes du 04/10/2026) : chaque image repose le MÊME point visé et la MÊME distance ;
+ * seuls le cap (tourner) ou l'inclinaison (monter, descendre) changent. Google rend parfois la caméra par sa propre position (distance nulle) :
+ * on garde alors le dernier point visé et la dernière distance connus.
+ * - Ctrl + molette incline ; la molette seule zoome (Google). Le pincement du trackpad Mac arrive aussi en Ctrl + molette, mais SANS touche Ctrl :
+ *   il reste un zoom. La vraie touche Ctrl est suivie ici (page qui a le focus) et par la vue (message « ctrl ») quand c'est elle qui a le focus.
+ * - Ctrl + glisser ou clic droit : glisser à l'horizontale tourne autour du point visé, à la verticale incline.
+ * - ▲ ▼ : { incliner, pas } = un cran en douceur, { incliner, vitesse } = en continu jusqu'à { vitesse: 0 } ; ↺ ↻ : { tourner, pas } ; « Faire le tour » : { tour, duree }.
+ * Inclinaison 0 = vue du dessus, 85 = presque à l'horizon.
+ */
+const borne = t => Math.max(0, Math.min(85, t));
+const PV = { center: null, range: null }; // dernier point visé connu, et sa distance
+function noterPivot() { const k = P.carte, c = k && k.center; if (c && +k.range > 5) { PV.center = { lat: c.lat, lng: c.lng, altitude: c.altitude || 0 }; PV.range = +k.range; } }
+function pivot() {
+  const k = P.carte, c = k.center; if (c && +k.range > 5) { noterPivot(); return PV; }
+  if (c && PV.range) { // distance nulle : Google donne la position de la caméra ; le point visé est devant elle, à la dernière distance connue
+    const R = PV.range, t = (+k.tilt || 0) * Math.PI / 180, h = (+k.heading || 0) * Math.PI / 180, hz = R * Math.sin(t);
+    return { center: { lat: c.lat + hz * Math.cos(h) / 111200, lng: c.lng + hz * Math.sin(h) / (111320 * Math.cos(c.lat * Math.PI / 180)), altitude: (c.altitude || 0) - R * Math.cos(t) }, range: R };
+  }
+  return PV.center ? PV : { center: c, range: +k.range || 150 };
+}
+/** Pose la caméra : même point visé, même distance ; cap et inclinaison donnés. */
+function poser(cap, inclinaison, distance) { const k = P.carte, p = pivot(); k.center = p.center; k.range = distance || p.range; k.tilt = borne(inclinaison); k.heading = ((cap % 360) + 360) % 360; }
+const borneD = d => Math.max(12, Math.min(4000, d));
+const A = { cap: null, capV: 0, incl: null, inclV: 0, dist: null, h: 0, t: 0, d: 0, raf: 0, temps: 0, tourFin: 0, tourCap: null, ctrlPage: false, ctrlVue: false };
+function arreter() { P.vol = null; A.cap = A.incl = A.dist = A.tourCap = null; A.capV = A.inclV = 0; A.tourFin = 0; if (A.raf) cancelAnimationFrame(A.raf); A.raf = 0; A.temps = 0; }
+function image(now) {
+  A.raf = 0; const k = P.carte; if (!k) return; const dt = Math.min(0.05, A.temps ? (now - A.temps) / 1000 : 1 / 60); A.temps = now;
+  if (A.tourFin) { if (now >= A.tourFin) { A.capV = 0; A.cap = A.tourCap; A.tourFin = 0; } }
+  if (A.capV) A.cap = (A.cap ?? A.h) + A.capV * dt; if (A.inclV) A.incl = borne((A.incl ?? A.t) + A.inclV * dt);
+  const f = Math.min(1, dt * 11); let fini = true;
+  if (A.cap != null) { const d = A.cap - A.h; if (Math.abs(d) < 0.02 && !A.capV && !A.tourFin) { A.h = A.cap; A.cap = null; } else { A.h = A.tourFin || A.capV ? A.cap : A.h + d * f; fini = false; } }
+  if (A.incl != null) { const d = A.incl - A.t; if (Math.abs(d) < 0.02 && !A.inclV) { A.t = A.incl; A.incl = null; } else { A.t = A.inclV ? A.incl : A.t + d * f; fini = false; } }
+  if (A.dist != null) { const d = A.dist - A.d; if (Math.abs(d) < 0.05) { A.d = A.dist; A.dist = null; } else { A.d += d * f; fini = false; } }
+  poser(A.h, A.t, A.d); if (!fini) A.raf = requestAnimationFrame(image); else A.temps = 0;
+}
+/** Au repos, l'animation repart de la caméra courante (cap déroulé ensuite, sans saut de 359° à 0°). */
+function depart() { const k = P.carte; if (!A.raf && A.cap == null && A.incl == null && A.dist == null && !A.capV && !A.inclV && !A.tourFin) { A.h = +k.heading || 0; A.t = +k.tilt || 0; A.d = pivot().range; } }
+function zoomer(facteur) { if (!P.carte) return; depart(); A.dist = borneD((A.dist ?? A.d) * facteur); animer(); }
+function animer() { const k = P.carte; if (!k || A.raf) return; if (k.stopCameraAnimation) k.stopCameraAnimation(); A.raf = requestAnimationFrame(image); }
+function inclinerDe(pas) { if (!P.carte) return; __gestes.inclinaisons++; depart(); A.incl = borne((A.incl ?? A.t) + pas); animer(); }
+function tournerDe(pas) { if (!P.carte) return; depart(); A.cap = (A.cap ?? A.h) + pas; animer(); }
+const vraiCtrl = () => A.ctrlPage || A.ctrlVue;
+window.__gestes = { roues: 0, rouesCtrl: 0, inclinaisons: 0 }; // compteurs pour l'essai des gestes
+window.addEventListener("wheel", e => {
+  if (!P.carte) return; __gestes.roues++; if (e.ctrlKey) __gestes.rouesCtrl++; __gestes.ctrlPage = A.ctrlPage; __gestes.ctrlVue = A.ctrlVue; if (!e.ctrlKey) A.ctrlPage = A.ctrlVue = false; // Ctrl relâché hors de la page : on le sait au premier tour de molette sans Ctrl
+  e.preventDefault(); e.stopImmediatePropagation(); const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY; A.capV = 0; A.tourFin = 0; A.cap = null;
+  if (e.ctrlKey && vraiCtrl()) { inclinerDe(Math.max(-12, Math.min(12, dy * 0.12))); return; } // vraie touche Ctrl : incliner
+  // molette seule, défilement à deux doigts, pincement du trackpad (Ctrl + molette SANS touche Ctrl) : zoom vers le point visé, inclinaison et cap gardés
+  // (le zoom de Google, vers le curseur, aplatissait l'inclinaison jusqu'à 3° et déplaçait le point visé : mesuré le 04/10/2026)
+  zoomer(Math.exp(Math.max(-60, Math.min(60, dy)) * (e.ctrlKey ? 0.012 : 0.0025)));
+}, { capture: true, passive: false });
+window.addEventListener("keydown", e => { if (e.key === "Control") A.ctrlPage = true; }, true);
+window.addEventListener("keyup", e => { if (e.key === "Control") A.ctrlPage = false; }, true);
+window.addEventListener("blur", () => { A.ctrlPage = false; });
+// Ctrl + glisser ou clic droit : tourner autour du point visé (horizontal) et incliner (vertical), sans déplacer le point visé ni changer la distance
+let GL = null;
+window.addEventListener("pointerdown", e => {
+  if (!P.carte) return; arreter(); const tourner = e.button === 2 || (e.button === 0 && (e.ctrlKey || vraiCtrl())); if (!tourner) return;
+  e.preventDefault(); e.stopImmediatePropagation(); GL = { x: e.clientX, y: e.clientY, h: +P.carte.heading || 0, t: +P.carte.tilt || 0, id: e.pointerId }; try { document.documentElement.setPointerCapture(e.pointerId); } catch (x) {}
+}, true);
+window.addEventListener("pointermove", e => { if (!GL || e.pointerId !== GL.id) return; e.preventDefault(); e.stopImmediatePropagation(); poser(GL.h - (e.clientX - GL.x) * 0.3, GL.t - (e.clientY - GL.y) * 0.25); }, true);
+const finGlisser = e => { if (!GL || (e && e.pointerId !== GL.id)) return; if (e) { e.preventDefault(); e.stopImmediatePropagation(); } GL = null; };
+window.addEventListener("pointerup", finGlisser, true); window.addEventListener("pointercancel", finGlisser, true);
+window.addEventListener("contextmenu", e => { if (P.carte) e.preventDefault(); }, true);
 function vider(nom) { for (const e of P.couches[nom]) e.remove(); P.couches[nom] = []; }
 const anneau = r => r.map(([lon, lat]) => ({ lat, lng: lon }));
 const garder = (nom, e) => { if (!P.visible) e.style.display = "none"; P.carte.append(e); P.couches[nom].push(e); };
@@ -89,23 +154,34 @@ function dessiner(d) {
   if ("visible" in d) { P.visible = !!d.visible; for (const nom of Object.keys(P.couches)) for (const e of P.couches[nom]) e.style.display = P.visible ? "" : "none"; }
 }
 function camera(d) {
-  const k = P.carte; if (k.stopCameraAnimation) k.stopCameraAnimation();
-  const c = d.center || (k.center && { lat: k.center.lat, lon: k.center.lng, alt: k.center.altitude });
-  const end = { center: ll(c.lat, c.lon, c.alt), range: d.range ?? k.range, tilt: d.tilt ?? k.tilt, heading: d.heading ?? k.heading };
-  if (d.duree > 0) k.flyCameraTo({ endCamera: end, durationMillis: d.duree }); else Object.assign(k, end);
+  const k = P.carte; arreter(); if (k.stopCameraAnimation) k.stopCameraAnimation(); const p = pivot();
+  const end = { center: d.center ? ll(d.center.lat, d.center.lon, d.center.alt) : p.center, range: d.range ?? p.range, tilt: d.tilt ?? +k.tilt, heading: d.heading ?? +k.heading };
+  PV.center = end.center; PV.range = end.range; // le point visé voulu par la vue
+  if (!(d.duree > 0)) { Object.assign(k, end); return; }
+  // après un vol, Google décrit la caméra par sa propre position (distance nulle) : son zoom et ses gestes partent alors de travers. À l'arrivée, la
+  // caméra est reposée sur le point visé et la distance voulus (même image).
+  // Google applique son état final juste après « gmp-animationend » : la caméra est reposée un peu après, et encore si la distance est restée nulle
+  // (sauf si l'agent a repris la main entre-temps).
+  const t0 = performance.now(), libre = () => !GL && !A.raf && !P.vol, reposer = n => { if (!libre()) return; Object.assign(k, end); if (n < 4) setTimeout(() => { if (libre() && !(+k.range > 5)) reposer(n + 1); }, 150); };
+  const fin = e => { if (e && performance.now() - t0 < d.duree * 0.9) return; /* fin d'une animation précédente */ k.removeEventListener("gmp-animationend", fin); if (P.vol !== fin) return; P.vol = null; setTimeout(() => reposer(0), 80); };
+  P.vol = fin; k.addEventListener("gmp-animationend", fin); setTimeout(fin, d.duree + 400); k.flyCameraTo({ endCamera: end, durationMillis: d.duree });
 }
 function traiter(d) {
   if (!P.carte) { P.enAttente.push(d); return; }
   if (d.type === "camera") camera(d); else if (d.type === "couches") dessiner(d);
   else if (d.type === "orbite") { const k = P.carte, c = d.center ? ll(d.center.lat, d.center.lon, d.center.alt) : k.center; k.flyCameraAround({ camera: { center: c, range: d.range ?? k.range, tilt: d.tilt ?? k.tilt, heading: d.heading ?? k.heading }, durationMillis: d.duree || 24000, repeatCount: d.tours || 1 }); }
-  else if (d.type === "stop") P.carte.stopCameraAnimation();
+  else if (d.type === "stop") { arreter(); P.carte.stopCameraAnimation(); }
   else if (d.type === "gestes") P.carte.gestureHandling = d.actifs ? "GREEDY" : "NONE";
+  else if (d.type === "incliner") { if (typeof d.pas === "number") inclinerDe(d.pas); if (typeof d.vitesse === "number") { if (d.vitesse) { depart(); A.inclV = d.vitesse; animer(); } else { A.inclV = 0; A.incl = null; } } }
+  else if (d.type === "tourner" && typeof d.pas === "number") tournerDe(d.pas);
+  else if (d.type === "tour") { depart(); A.cap = null; A.tourCap = A.h + 360; A.capV = 360 / ((d.duree || 24000) / 1000); A.tourFin = performance.now() + (d.duree || 24000); animer(); } // un tour complet, même inclinaison, même distance, même point visé
 }
 if (!AUTORISEE) { msg("Page réservée au Localisateur Academia."); if (window.parent !== window && anc && /^chrome-extension:\/\//.test(anc)) window.parent.postMessage({ v: 1, type: "refus" }, anc); } // une extension que la page n'accepte pas : elle le dit (sans donnée), Google n'est pas chargé
 else {
   window.addEventListener("message", e => {
     if (!EXT.includes(e.origin) || e.source !== window.parent || !e.data || e.data.v !== 1) return; // seulement l'extension qui contient l'iframe, protocole v1
     if (!P.parent) { P.parent = e.source; P.origine = e.origin; }
+    if (e.data.type === "ctrl") { A.ctrlVue = !!e.data.bas; return; }
     if (e.data.type === "preparer") { bibliotheque().catch(() => {}); return; } // préparation : bibliothèque seulement, aucune carte
     if (e.data.type === "init") { P.init = e.data; if (!P.charge) { P.charge = true; charger(); } return; }
     traiter(e.data);
