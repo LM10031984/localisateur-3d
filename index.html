@@ -23,9 +23,9 @@ html,body{margin:0;height:100%;background:#1a2340;overflow:hidden}gmp-map-3d{pos
 "use strict";
 const CLE = "AIzaSyCC--aFNVO_o5rFzVQwQ4BxvZfqvZu9Ycs"; // posée à la publication (tools/publier-page-3d.mjs), jamais dans le dépôt du Localisateur
 const VERSION = "beta";
-const VERSION_PAGE = "rc5.4"; // version de cette page, renvoyée avec chaque pastille choisie (journal de la chaîne du clic dans l'extension)
+const VERSION_PAGE = "rc5.5"; // version de cette page, renvoyée avec chaque pastille choisie (journal de la chaîne du clic dans l'extension)
 const EXT = ["chrome-extension://bjoapcmbjmollccjocdacbobdpfekmgk"]; // l'extension : identifiant calculé à la publication depuis la clé du manifeste (tools/publier-page-3d.mjs), jamais écrit à la main
-// Protocole v1. Extension → page : preparer, init, camera, couches, orbite, stop, gestes, incliner, ctrl. Page → extension : pret, refus, etape, google, chargee, touche, stable, erreur, clic, camera, repere.
+// Protocole v1. Extension → page : preparer, init, camera, couches, orbite, stop, gestes, incliner, ctrl. Page → extension : pret, refus, etape, google, chargee, touche, stable, erreur, souris, clic, camera, repere.
 // « preparer » : le script et la bibliothèque Google sont chargés, SANS carte (Google facture le chargement d'une carte, pas celui de la bibliothèque).
 // « chargee » : premier affichage de la carte (la 3D s'affine ensuite toute seule) ; « etape » : l'heure de chaque étape (journal des temps de l'extension).
 const P = { parent: null, origine: null, carte: null, lib: null, mk: null, couches: { parcelles: [], selection: [], batiment: [], reperes: [], contexte: [], cercle: [], piscines: [] }, visible: true, enAttente: [], chargee: false, reperes: [], tRepere: 0 };
@@ -141,6 +141,12 @@ let GL = null;
 const CLIC = { x: 0, y: 0, bouge: false, pivot: null };
 window.addEventListener("pointerdown", e => { if (!P.carte || e.button !== 0) return; CLIC.x = e.clientX; CLIC.y = e.clientY; CLIC.bouge = false; const p = pivot(); CLIC.pivot = p && p.center ? { center: p.center, range: p.range, tilt: +P.carte.tilt, heading: +P.carte.heading } : null; }, true);
 window.addEventListener("pointermove", e => { if (!CLIC.bouge && (Math.abs(e.clientX - CLIC.x) > 5 || Math.abs(e.clientY - CLIC.y) > 5)) CLIC.bouge = true; }, true);
+/*
+ * rc5.5 (SPEC-beta-finale §3, ligne de diagnostic) : chaque clic de souris reçu par la page est annoncé à l'extension (« reçu »), avant tout
+ * traitement de Google ; le clic de Google qui suit (pastille ou bâtiment) porte le même numéro (« envoyé »). L'extension dit ensuite « accepté ».
+ */
+const DIAG = { n: 0 };
+window.addEventListener("pointerup", e => { if (!P.carte || e.button !== 0 || CLIC.bouge || GL) return; DIAG.n++; DIAG.t = performance.now(); envoyer({ type: "souris", n: DIAG.n, version: VERSION_PAGE }); }, true);
 window.addEventListener("pointerup", e => {
   if (!P.carte || e.button !== 0 || CLIC.bouge || GL || A.raf || P.vol) return;
   const c = CLIC.pivot; if (!c) return; setTimeout(() => { if (!P.carte || GL || A.raf || P.vol) return; const k = P.carte; k.center = c.center; k.range = c.range; k.tilt = c.tilt; k.heading = c.heading; }, 60); // clic seul : la caméra reste où elle était
@@ -208,10 +214,10 @@ function clicCarte(lat, lon, alt) {
   if (CLIC.bouge) return null;
   if (performance.now() - P.tRepere < 400) return null;
   const recu = performance.now(), r0 = pastilleProche(lat, lon); if (r0) { const r = superposee(r0); choisir(r.n, r.cle, recu); return r; }
-  envoyer({ type: "clic", lat, lon, alt }); return null;
+  envoyer({ type: "clic", lat, lon, alt, clic: DIAG.n, version: VERSION_PAGE, recu: Math.round(recu), envoye: Math.round(performance.now()) }); return null;
 }
 /** Une pastille est choisie : l'extension la montre (« Maison 3 sur 22 », caméra, « C'est ce bien »). Jamais de bulle de parcelle en même temps. */
-function choisir(n, cle, recu = performance.now()) { P.tRepere = performance.now(); for (const r of P.reperes) r.sel = r.cle === cle; envoyer({ type: "repere", n, cle, version: VERSION_PAGE, recu: Math.round(recu), envoye: Math.round(performance.now()) }); }
+function choisir(n, cle, recu = performance.now()) { P.tRepere = performance.now(); for (const r of P.reperes) r.sel = r.cle === cle; envoyer({ type: "repere", n, cle, clic: DIAG.n, version: VERSION_PAGE, recu: Math.round(recu), envoye: Math.round(performance.now()) }); }
 /**
  * rc5.3 (contre-revue A1) : pastilles SUPERPOSÉES (à moins de 2 m l'une de l'autre : deux sources d'une même maison, ou deux maisons collées).
  * Le premier clic choisit la pastille touchée ; un nouveau clic au même endroit passe à la suivante du groupe, dans l'ordre des numéros.
@@ -265,7 +271,7 @@ else {
     if (e.data.type === "init") { P.init = e.data; if (!P.charge) { P.charge = true; charger(); } return; }
     traiter(e.data);
   });
-  window.parent.postMessage({ v: 1, type: "pret" }, anc); // aucune donnée : l'extension sait que la page écoute
+  window.parent.postMessage({ v: 1, type: "pret", version: VERSION_PAGE }, anc); // aucune donnée : l'extension sait que la page écoute
   window.addEventListener("keydown", e => { if (e.key === "Escape") envoyer({ type: "touche", key: "Escape" }); }, true); // après un clic dans la 3D, Échap reste celui de la vue
 }
 </script>
