@@ -23,12 +23,12 @@ html,body{margin:0;height:100%;background:#1a2340;overflow:hidden}gmp-map-3d{pos
 "use strict";
 const CLE = "AIzaSyCC--aFNVO_o5rFzVQwQ4BxvZfqvZu9Ycs"; // posée à la publication (tools/publier-page-3d.mjs), jamais dans le dépôt du Localisateur
 const VERSION = "beta";
-const VERSION_PAGE = "rc5.3"; // version de cette page, renvoyée avec chaque pastille choisie (journal de la chaîne du clic dans l'extension)
+const VERSION_PAGE = "rc5.4"; // version de cette page, renvoyée avec chaque pastille choisie (journal de la chaîne du clic dans l'extension)
 const EXT = ["chrome-extension://bjoapcmbjmollccjocdacbobdpfekmgk"]; // l'extension : identifiant calculé à la publication depuis la clé du manifeste (tools/publier-page-3d.mjs), jamais écrit à la main
 // Protocole v1. Extension → page : preparer, init, camera, couches, orbite, stop, gestes, incliner, ctrl. Page → extension : pret, refus, etape, google, chargee, touche, stable, erreur, clic, camera, repere.
 // « preparer » : le script et la bibliothèque Google sont chargés, SANS carte (Google facture le chargement d'une carte, pas celui de la bibliothèque).
 // « chargee » : premier affichage de la carte (la 3D s'affine ensuite toute seule) ; « etape » : l'heure de chaque étape (journal des temps de l'extension).
-const P = { parent: null, origine: null, carte: null, lib: null, mk: null, couches: { parcelles: [], selection: [], reperes: [], contexte: [], cercle: [], piscines: [] }, visible: true, enAttente: [], chargee: false, reperes: [], tRepere: 0 };
+const P = { parent: null, origine: null, carte: null, lib: null, mk: null, couches: { parcelles: [], selection: [], batiment: [], reperes: [], contexte: [], cercle: [], piscines: [] }, visible: true, enAttente: [], chargee: false, reperes: [], tRepere: 0 };
 const anc = location.ancestorOrigins && location.ancestorOrigins.length ? location.ancestorOrigins[0] : null;
 const AUTORISEE = window.parent !== window && !!anc && EXT.includes(anc); // seulement dans un iframe posé directement par l'extension
 const msg = t => { const m = document.getElementById("msg"); if (m) m.textContent = t; };
@@ -178,6 +178,8 @@ function dessiner(d) {
   const L = P.lib;
   if ("parcelles" in d) { vider("parcelles"); for (const r of d.parcelles || []) garder("parcelles", new L.Polyline3DElement(Object.assign({ path: anneau(r), strokeColor: "rgba(255,255,255,.75)", strokeWidth: 1 }, AU_SOL))); }
   if ("selection" in d) { vider("selection"); for (const r of d.selection || []) garder("selection", new L.Polyline3DElement(Object.assign({ path: anneau(r), strokeColor: "#FFD60A", strokeWidth: 2.5, zIndex: 2 }, AU_SOL))); } // la parcelle du résultat : le même contour, un peu plus épais
+  // rc5.4 : le bâtiment choisi d'un clic : son contour, orange, posé au sol
+  if ("batiment" in d) { vider("batiment"); for (const r of d.batiment || []) garder("batiment", new L.Polyline3DElement(Object.assign({ path: anneau(r), strokeColor: "#FF5A00", strokeWidth: 4, zIndex: 3 }, AU_SOL))); }
   if ("piscines" in d) { vider("piscines"); for (const r of d.piscines || []) garder("piscines", new L.Polyline3DElement(Object.assign({ path: anneau(r), strokeColor: "#4FD8FF", strokeWidth: 1 }, AU_SOL))); }
   if ("cercle" in d) { vider("cercle"); for (const c of d.cercle ? [].concat(d.cercle) : []) { const n = 96, R = Math.PI / 180, path = Array.from({ length: n + 1 }, (_, i) => { const a = i * 2 * Math.PI / n; return { lat: c.lat + c.rayon * Math.cos(a) / 111200, lng: c.lon + c.rayon * Math.sin(a) / (111320 * Math.cos(c.lat * R)) }; }); garder("cercle", new L.Polyline3DElement(Object.assign({ path, strokeColor: c.couleur || "#FF5A00", strokeWidth: 1.5 }, AU_SOL))); } }
   /*
