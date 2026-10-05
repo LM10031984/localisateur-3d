@@ -23,11 +23,12 @@ html,body{margin:0;height:100%;background:#1a2340;overflow:hidden}gmp-map-3d{pos
 "use strict";
 const CLE = "AIzaSyCC--aFNVO_o5rFzVQwQ4BxvZfqvZu9Ycs"; // posée à la publication (tools/publier-page-3d.mjs), jamais dans le dépôt du Localisateur
 const VERSION = "beta";
+const VERSION_PAGE = "rc5.3"; // version de cette page, renvoyée avec chaque pastille choisie (journal de la chaîne du clic dans l'extension)
 const EXT = ["chrome-extension://bjoapcmbjmollccjocdacbobdpfekmgk"]; // l'extension : identifiant calculé à la publication depuis la clé du manifeste (tools/publier-page-3d.mjs), jamais écrit à la main
 // Protocole v1. Extension → page : preparer, init, camera, couches, orbite, stop, gestes, incliner, ctrl. Page → extension : pret, refus, etape, google, chargee, touche, stable, erreur, clic, camera, repere.
 // « preparer » : le script et la bibliothèque Google sont chargés, SANS carte (Google facture le chargement d'une carte, pas celui de la bibliothèque).
 // « chargee » : premier affichage de la carte (la 3D s'affine ensuite toute seule) ; « etape » : l'heure de chaque étape (journal des temps de l'extension).
-const P = { parent: null, origine: null, carte: null, lib: null, mk: null, couches: { parcelles: [], selection: [], reperes: [], cercle: [], piscines: [] }, visible: true, enAttente: [], chargee: false, reperes: [], tRepere: 0 };
+const P = { parent: null, origine: null, carte: null, lib: null, mk: null, couches: { parcelles: [], selection: [], reperes: [], contexte: [], cercle: [], piscines: [] }, visible: true, enAttente: [], chargee: false, reperes: [], tRepere: 0 };
 const anc = location.ancestorOrigins && location.ancestorOrigins.length ? location.ancestorOrigins[0] : null;
 const AUTORISEE = window.parent !== window && !!anc && EXT.includes(anc); // seulement dans un iframe posé directement par l'extension
 const msg = t => { const m = document.getElementById("msg"); if (m) m.textContent = t; };
@@ -188,9 +189,13 @@ function dessiner(d) {
    *   puis disparaissait aussitôt).
    */
   if ("reperes" in d) { vider("reperes"); P.reperes = (d.reperes || []).map(r => ({ n: r.n, cle: r.cle, lat: +r.lat, lon: +r.lon, sel: !!r.sel }));
-    for (const r of d.reperes || []) { const e = new L.Marker3DInteractiveElement({ position: ll(r.lat, r.lon, r.hauteur || 18), altitudeMode: "RELATIVE_TO_GROUND", extruded: true });
+    // rc5.3 (contre-revue A1) : sizePreserved — la pastille garde sa taille à l'écran, de près comme de loin (elle restait minuscule de loin)
+    for (const r of d.reperes || []) { const e = new L.Marker3DInteractiveElement({ position: ll(r.lat, r.lon, r.hauteur || 18), altitudeMode: "RELATIVE_TO_GROUND", extruded: true, sizePreserved: true });
       e.append(new P.mk.PinElement({ glyphText: String(r.n), background: r.sel ? "#FF5A00" : "#2B44D6", borderColor: r.sel ? "#fff" : "#070C28", glyphColor: "#fff", scale: r.sel ? 1.8 : 1.35 }));
-      e.addEventListener("gmp-click", ev => { if (ev && ev.stopPropagation) ev.stopPropagation(); choisir(r.n, r.cle); }); garder("reperes", e); } }
+      e.addEventListener("gmp-click", ev => { const recu = performance.now(); if (ev && ev.stopPropagation) ev.stopPropagation(); const x = P.reperes.find(y => y.cle === r.cle) || r; const s = superposee(x); choisir(s.n, s.cle, recu); }); garder("reperes", e); } }
+  // rc5.3 (A7, A9) : repères de CONTEXTE (adresse du DPE, centre d'une copropriété) : gris, sans numéro, jamais choisis comme une maison
+  if ("contexte" in d) { vider("contexte"); for (const c of d.contexte || []) { const e = new L.Marker3DElement({ position: ll(c.lat, c.lon, 6), altitudeMode: "RELATIVE_TO_GROUND", extruded: true, sizePreserved: true, label: c.libelle || "" });
+      e.append(new P.mk.PinElement({ glyphText: "", background: "#6B7280", borderColor: "#fff", scale: 0.9 })); garder("contexte", e); } }
   if ("visible" in d) { P.visible = !!d.visible; for (const nom of Object.keys(P.couches)) for (const e of P.couches[nom]) e.style.display = P.visible ? "" : "none"; }
 }
 /**
@@ -200,15 +205,24 @@ function dessiner(d) {
 function clicCarte(lat, lon, alt) {
   if (CLIC.bouge) return null;
   if (performance.now() - P.tRepere < 400) return null;
-  const r = pastilleProche(lat, lon); if (r) { choisir(r.n, r.cle); return r; }
+  const recu = performance.now(), r0 = pastilleProche(lat, lon); if (r0) { const r = superposee(r0); choisir(r.n, r.cle, recu); return r; }
   envoyer({ type: "clic", lat, lon, alt }); return null;
 }
 /** Une pastille est choisie : l'extension la montre (« Maison 3 sur 22 », caméra, « C'est ce bien »). Jamais de bulle de parcelle en même temps. */
-function choisir(n, cle) { P.tRepere = performance.now(); for (const r of P.reperes) r.sel = r.cle === cle; envoyer({ type: "repere", n, cle }); }
+function choisir(n, cle, recu = performance.now()) { P.tRepere = performance.now(); for (const r of P.reperes) r.sel = r.cle === cle; envoyer({ type: "repere", n, cle, version: VERSION_PAGE, recu: Math.round(recu), envoye: Math.round(performance.now()) }); }
+/**
+ * rc5.3 (contre-revue A1) : pastilles SUPERPOSÉES (à moins de 2 m l'une de l'autre : deux sources d'une même maison, ou deux maisons collées).
+ * Le premier clic choisit la pastille touchée ; un nouveau clic au même endroit passe à la suivante du groupe, dans l'ordre des numéros.
+ * Jamais l'ordre du tableau seul.
+ */
+function superposee(r) {
+  const g = P.reperes.filter(x => Math.hypot((x.lat - r.lat) * 111200, (x.lon - r.lon) * 111320 * Math.cos(r.lat * Math.PI / 180)) < 2).sort((a, b) => a.n - b.n);
+  if (g.length < 2) return r; const i = g.findIndex(x => x.sel); return i >= 0 ? g[(i + 1) % g.length] : r;
+}
 /** La pastille la plus proche d'un point cliqué, dans une tolérance qui suit la distance de la caméra (de 4 à 30 m) : viser reste facile de loin. */
 function pastilleProche(lat, lon) {
   if (!P.reperes.length) return null; const R = pivot().range || 180, tol = Math.max(4, Math.min(30, R / 40));
-  let best = null; for (const r of P.reperes) { const dy = (r.lat - lat) * 111200, dx = (r.lon - lon) * 111320 * Math.cos(lat * Math.PI / 180), dm = Math.hypot(dx, dy); if (dm <= tol && (!best || dm < best.dm)) best = { r, dm }; }
+  let best = null; for (const r of P.reperes) { const dy = (r.lat - lat) * 111200, dx = (r.lon - lon) * 111320 * Math.cos(lat * Math.PI / 180), dm = Math.hypot(dx, dy); if (dm <= tol && (!best || dm < best.dm - 0.01 || (Math.abs(dm - best.dm) <= 0.01 && r.n < best.r.n))) best = { r, dm }; } // à égalité : le plus petit numéro, puis superposee()
   return best ? best.r : null;
 }
 function camera(d) {
