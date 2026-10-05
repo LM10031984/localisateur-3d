@@ -27,7 +27,7 @@ const EXT = ["chrome-extension://bjoapcmbjmollccjocdacbobdpfekmgk"]; // l'extens
 // Protocole v1. Extension → page : preparer, init, camera, couches, orbite, stop, gestes, incliner, ctrl. Page → extension : pret, refus, etape, google, chargee, touche, stable, erreur, clic, camera, repere.
 // « preparer » : le script et la bibliothèque Google sont chargés, SANS carte (Google facture le chargement d'une carte, pas celui de la bibliothèque).
 // « chargee » : premier affichage de la carte (la 3D s'affine ensuite toute seule) ; « etape » : l'heure de chaque étape (journal des temps de l'extension).
-const P = { parent: null, origine: null, carte: null, lib: null, mk: null, couches: { parcelles: [], selection: [], reperes: [], cercle: [], piscines: [] }, visible: true, enAttente: [], chargee: false };
+const P = { parent: null, origine: null, carte: null, lib: null, mk: null, couches: { parcelles: [], selection: [], reperes: [], cercle: [], piscines: [] }, visible: true, enAttente: [], chargee: false, reperes: [], tRepere: 0 };
 const anc = location.ancestorOrigins && location.ancestorOrigins.length ? location.ancestorOrigins[0] : null;
 const AUTORISEE = window.parent !== window && !!anc && EXT.includes(anc); // seulement dans un iframe posé directement par l'extension
 const msg = t => { const m = document.getElementById("msg"); if (m) m.textContent = t; };
@@ -68,7 +68,7 @@ function charger() {
     P.carte = new P.lib.Map3DElement({ center: ll(c.center.lat, c.center.lon, c.center.alt), range: c.range, tilt: c.tilt, heading: c.heading || 0, mode: P.lib.MapMode.SATELLITE, defaultUIHidden: true, gestureHandling: "GREEDY" });
     P.carte.addEventListener("gmp-error", () => erreur("carte"));
     let stableDit = false; P.carte.addEventListener("gmp-steadychange", e => { if (e.isSteady) { affichee(); if (!stableDit) { stableDit = true; etape("stable"); } envoyer({ type: "stable" }); } });
-    P.carte.addEventListener("gmp-click", e => { const p = e.position; if (p) envoyer({ type: "clic", lat: p.lat, lon: p.lng, alt: p.altitude }); });
+    P.carte.addEventListener("gmp-click", e => { const p = e.position; if (p) clicCarte(p.lat, p.lng, p.altitude); });
     let t = 0; const cam = () => { clearTimeout(t); t = setTimeout(() => { const k = P.carte, x = k.center; noterPivot(); if (x) envoyer({ type: "camera", center: { lat: x.lat, lon: x.lng, alt: x.altitude }, range: +k.range > 5 ? k.range : PV.range || k.range, tilt: k.tilt, heading: k.heading }); }, 150); };
     ["gmp-centerchange", "gmp-rangechange", "gmp-tiltchange", "gmp-headingchange"].forEach(ev => P.carte.addEventListener(ev, cam));
     document.getElementById("msg").remove(); document.body.append(P.carte); etape("carte");
@@ -133,6 +133,17 @@ window.addEventListener("keyup", e => { if (e.key === "Control") A.ctrlPage = fa
 window.addEventListener("blur", () => { A.ctrlPage = false; });
 // Ctrl + glisser ou clic droit : tourner autour du point visé (horizontal) et incliner (vertical), sans déplacer le point visé ni changer la distance
 let GL = null;
+/*
+ * Clic ou glisser (demande du 05/10/2026) : un mouvement de moins de 5 px reste un clic, et la caméra ne bouge pas à cause du clic lui-même
+ * (Google déplaçait un peu le point visé au relâchement). Au-delà de 5 px, c'est un glisser : aucun choix, aucune bulle.
+ */
+const CLIC = { x: 0, y: 0, bouge: false, pivot: null };
+window.addEventListener("pointerdown", e => { if (!P.carte || e.button !== 0) return; CLIC.x = e.clientX; CLIC.y = e.clientY; CLIC.bouge = false; const p = pivot(); CLIC.pivot = p && p.center ? { center: p.center, range: p.range, tilt: +P.carte.tilt, heading: +P.carte.heading } : null; }, true);
+window.addEventListener("pointermove", e => { if (!CLIC.bouge && (Math.abs(e.clientX - CLIC.x) > 5 || Math.abs(e.clientY - CLIC.y) > 5)) CLIC.bouge = true; }, true);
+window.addEventListener("pointerup", e => {
+  if (!P.carte || e.button !== 0 || CLIC.bouge || GL || A.raf || P.vol) return;
+  const c = CLIC.pivot; if (!c) return; setTimeout(() => { if (!P.carte || GL || A.raf || P.vol) return; const k = P.carte; k.center = c.center; k.range = c.range; k.tilt = c.tilt; k.heading = c.heading; }, 60); // clic seul : la caméra reste où elle était
+}, true);
 window.addEventListener("pointerdown", e => {
   if (!P.carte) return; arreter(); const tourner = e.button === 2 || (e.button === 0 && (e.ctrlKey || vraiCtrl())); if (!tourner) return;
   e.preventDefault(); e.stopImmediatePropagation(); GL = { x: e.clientX, y: e.clientY, h: +P.carte.heading || 0, t: +P.carte.tilt || 0, id: e.pointerId }; try { document.documentElement.setPointerCapture(e.pointerId); } catch (x) {}
@@ -168,8 +179,37 @@ function dessiner(d) {
   if ("selection" in d) { vider("selection"); for (const r of d.selection || []) garder("selection", new L.Polyline3DElement(Object.assign({ path: anneau(r), strokeColor: "#FFD60A", strokeWidth: 2.5, zIndex: 2 }, AU_SOL))); } // la parcelle du résultat : le même contour, un peu plus épais
   if ("piscines" in d) { vider("piscines"); for (const r of d.piscines || []) garder("piscines", new L.Polyline3DElement(Object.assign({ path: anneau(r), strokeColor: "#4FD8FF", strokeWidth: 1 }, AU_SOL))); }
   if ("cercle" in d) { vider("cercle"); for (const c of d.cercle ? [].concat(d.cercle) : []) { const n = 96, R = Math.PI / 180, path = Array.from({ length: n + 1 }, (_, i) => { const a = i * 2 * Math.PI / n; return { lat: c.lat + c.rayon * Math.cos(a) / 111200, lng: c.lon + c.rayon * Math.sin(a) / (111320 * Math.cos(c.lat * R)) }; }); garder("cercle", new L.Polyline3DElement(Object.assign({ path, strokeColor: c.couleur || "#FF5A00", strokeWidth: 1.5 }, AU_SOL))); } }
-  if ("reperes" in d) { vider("reperes"); for (const r of d.reperes || []) { const e = new L.Marker3DInteractiveElement({ position: ll(r.lat, r.lon, r.hauteur || 18), altitudeMode: "RELATIVE_TO_GROUND", extruded: true }); e.append(new P.mk.PinElement({ glyphText: String(r.n), background: r.sel ? "#FF5A00" : "#2B44D6", borderColor: "#070C28", glyphColor: "#fff", scale: r.sel ? 1.3 : 1 })); e.addEventListener("gmp-click", () => envoyer({ type: "repere", n: r.n, cle: r.cle })); garder("reperes", e); } }
+  /*
+   * Pastilles numérotées (demande de Laurent du 05/10/2026) : faciles à viser à toute distance.
+   * - taille fixe à l'écran (les pastilles de Google sont dessinées en pixels, jamais en mètres) et plus grandes : au moins 28 px de large ;
+   * - zone de clic plus large que le dessin : un clic sur la carte tout près d'une pastille choisit cette maison (tolérance liée à la distance) ;
+   * - la pastille choisie est mise en évidence (orange, plus grande) ;
+   * - un clic sur une pastille CHOISIT la maison : la page n'envoie jamais de « clic » de parcelle en même temps (c'était la bulle qui s'affichait
+   *   puis disparaissait aussitôt).
+   */
+  if ("reperes" in d) { vider("reperes"); P.reperes = (d.reperes || []).map(r => ({ n: r.n, cle: r.cle, lat: +r.lat, lon: +r.lon, sel: !!r.sel }));
+    for (const r of d.reperes || []) { const e = new L.Marker3DInteractiveElement({ position: ll(r.lat, r.lon, r.hauteur || 18), altitudeMode: "RELATIVE_TO_GROUND", extruded: true });
+      e.append(new P.mk.PinElement({ glyphText: String(r.n), background: r.sel ? "#FF5A00" : "#2B44D6", borderColor: r.sel ? "#fff" : "#070C28", glyphColor: "#fff", scale: r.sel ? 1.8 : 1.35 }));
+      e.addEventListener("gmp-click", ev => { if (ev && ev.stopPropagation) ev.stopPropagation(); choisir(r.n, r.cle); }); garder("reperes", e); } }
   if ("visible" in d) { P.visible = !!d.visible; for (const nom of Object.keys(P.couches)) for (const e of P.couches[nom]) e.style.display = P.visible ? "" : "none"; }
+}
+/**
+ * Un clic sur la carte : d'abord la pastille la plus proche (zone de clic plus large que le dessin), sinon la parcelle (bulle).
+ * Un glisser de plus de 5 px n'est pas un clic ; juste après un clic sur une pastille, aucune bulle ne s'ouvre par-dessus.
+ */
+function clicCarte(lat, lon, alt) {
+  if (CLIC.bouge) return null;
+  if (performance.now() - P.tRepere < 400) return null;
+  const r = pastilleProche(lat, lon); if (r) { choisir(r.n, r.cle); return r; }
+  envoyer({ type: "clic", lat, lon, alt }); return null;
+}
+/** Une pastille est choisie : l'extension la montre (« Maison 3 sur 22 », caméra, « C'est ce bien »). Jamais de bulle de parcelle en même temps. */
+function choisir(n, cle) { P.tRepere = performance.now(); for (const r of P.reperes) r.sel = r.cle === cle; envoyer({ type: "repere", n, cle }); }
+/** La pastille la plus proche d'un point cliqué, dans une tolérance qui suit la distance de la caméra (de 4 à 30 m) : viser reste facile de loin. */
+function pastilleProche(lat, lon) {
+  if (!P.reperes.length) return null; const R = pivot().range || 180, tol = Math.max(4, Math.min(30, R / 40));
+  let best = null; for (const r of P.reperes) { const dy = (r.lat - lat) * 111200, dx = (r.lon - lon) * 111320 * Math.cos(lat * Math.PI / 180), dm = Math.hypot(dx, dy); if (dm <= tol && (!best || dm < best.dm)) best = { r, dm }; }
+  return best ? best.r : null;
 }
 function camera(d) {
   const k = P.carte; arreter(); if (k.stopCameraAnimation) k.stopCameraAnimation(); const p = pivot();
@@ -186,6 +226,8 @@ function camera(d) {
   const fin = e => { if (e && performance.now() - t0 < d.duree * 0.9) return; /* fin d'une animation précédente */ k.removeEventListener("gmp-animationend", fin); if (P.vol !== fin) return; P.vol = null; setTimeout(() => reposer(0), 80); };
   P.vol = fin; k.addEventListener("gmp-animationend", fin); setTimeout(fin, d.duree + 400); k.flyCameraTo({ endCamera: end, durationMillis: d.duree });
 }
+window.__reperes3d = () => P.reperes.map(r => ({ n: r.n, cle: r.cle, lat: r.lat, lon: r.lon, sel: !!r.sel })); // essais seulement : les pastilles posées
+window.__clicCarte = (lat, lon) => { const r = clicCarte(+lat, +lon, 0); return r ? { n: r.n, cle: r.cle } : null; }; // essais seulement : le même chemin qu'un clic de Google
 window.__pivot3d = () => { const k = P.carte; if (!k) return null; const p = pivot(); return { lat: p.center && p.center.lat, lon: p.center && (p.center.lng ?? p.center.lon), alt: p.center && p.center.altitude, range: p.range, tilt: +k.tilt, heading: +k.heading, rangeCarte: +k.range }; }; // essais seulement : ce que la page garde comme point visé et distance
 function traiter(d) {
   if (!P.carte) { P.enAttente.push(d); return; }
