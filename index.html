@@ -23,11 +23,12 @@ html,body{margin:0;height:100%;background:#1a2340;overflow:hidden}gmp-map-3d{pos
 "use strict";
 const CLE = "AIzaSyCC--aFNVO_o5rFzVQwQ4BxvZfqvZu9Ycs"; // posée à la publication (tools/publier-page-3d.mjs), jamais dans le dépôt du Localisateur
 const VERSION = "beta";
-const VERSION_PAGE = "rc5.12"; // version de cette page, renvoyée avec chaque pastille choisie (journal de la chaîne du clic dans l'extension)
+const VERSION_PAGE = "rc5.13"; // version de cette page, renvoyée avec chaque pastille choisie (journal de la chaîne du clic dans l'extension)
 const EXT = ["chrome-extension://bjoapcmbjmollccjocdacbobdpfekmgk"]; // l'extension : identifiant calculé à la publication depuis la clé du manifeste (tools/publier-page-3d.mjs), jamais écrit à la main
 // Protocole v1. Extension → page : preparer, init, camera, couches, orbite, stop, gestes, incliner, ctrl. Page → extension : pret, refus, etape, google, chargee, touche, stable, erreur, souris, clic, camera, repere.
 // « preparer » : le script et la bibliothèque Google sont chargés, SANS carte (Google facture le chargement d'une carte, pas celui de la bibliothèque).
 // « chargee » : premier affichage de la carte (la 3D s'affine ensuite toute seule) ; « etape » : l'heure de chaque étape (journal des temps de l'extension).
+// rc5.13 : « etape » « camera-sol » = la caméra a été reposée une fois le sol de Google chargé (voir SOL).
 const P = { parent: null, origine: null, carte: null, lib: null, mk: null, couches: { parcelles: [], selection: [], batiment: [], reperes: [], contexte: [], cercle: [], piscines: [] }, visible: true, enAttente: [], chargee: false, reperes: [], tRepere: 0 };
 const anc = location.ancestorOrigins && location.ancestorOrigins.length ? location.ancestorOrigins[0] : null;
 const AUTORISEE = window.parent !== window && !!anc && EXT.includes(anc); // seulement dans un iframe posé directement par l'extension
@@ -68,7 +69,8 @@ function charger() {
     const c = (P.init && P.init.camera) || { center: { lat: 46.6, lon: 2.4, alt: 0 }, range: 900000, tilt: 0, heading: 0 };
     P.carte = new P.lib.Map3DElement({ center: ll(c.center.lat, c.center.lon, c.center.alt), range: c.range, tilt: c.tilt, heading: c.heading || 0, mode: P.lib.MapMode.SATELLITE, defaultUIHidden: true, gestureHandling: "GREEDY" });
     P.carte.addEventListener("gmp-error", () => erreur("carte"));
-    let stableDit = false; P.carte.addEventListener("gmp-steadychange", e => { if (e.isSteady) { affichee(); if (!stableDit) { stableDit = true; etape("stable"); } envoyer({ type: "stable" }); } });
+    PV.alt = +c.center.alt || 0; SOL.cible = { center: ll(c.center.lat, c.center.lon, c.center.alt), range: c.range, tilt: c.tilt, heading: c.heading || 0 }; SOL.aReposer = true; // posée avant que le sol soit chargé : à reposer dès qu'il l'est
+    let stableDit = false; P.carte.addEventListener("gmp-steadychange", e => { if (e.isSteady) { affichee(); solPret(); if (!stableDit) { stableDit = true; etape("stable"); } envoyer({ type: "stable" }); } });
     P.carte.addEventListener("gmp-click", e => { const p = e.position; if (p) clicCarte(p.lat, p.lng, p.altitude); });
     let t = 0; const cam = () => { clearTimeout(t); t = setTimeout(() => { const k = P.carte, x = k.center; noterPivot(); if (x) envoyer({ type: "camera", center: { lat: x.lat, lon: x.lng, alt: x.altitude }, range: +k.range > 5 ? k.range : PV.range || k.range, tilt: k.tilt, heading: k.heading }); }, 150); };
     ["gmp-centerchange", "gmp-rangechange", "gmp-tiltchange", "gmp-headingchange"].forEach(ev => P.carte.addEventListener(ev, cam));
@@ -88,13 +90,35 @@ function charger() {
  * Inclinaison 0 = vue du dessus, 85 = presque à l'horizon.
  */
 const borne = t => Math.max(0, Math.min(85, t));
-const PV = { center: null, range: null }; // dernier point visé connu, et sa distance
-function noterPivot() { const k = P.carte, c = k && k.center; if (c && +k.range > 5) { PV.center = { lat: c.lat, lng: c.lng, altitude: c.altitude || 0 }; PV.range = +k.range; } }
+const PV = { center: null, range: null, alt: null }; // dernier point visé connu, sa distance, et la hauteur VOULUE au-dessus du sol (jamais relue chez Google)
+/*
+ * rc5.13 (retour de Laurent du 07/10/2026 : « la 3D sous terre n'arrive pas à chaque fois ») : défaut de moment, deux causes dans cette page.
+ * 1. La caméra était posée UNE fois, à la création de la carte ou au premier dessin, avant que Google ait chargé le relief sous le bien. La hauteur
+ *    du point visé est comptée au-dessus du sol : sans relief chargé, Google la compte depuis le niveau zéro, et la caméra (90 m plus haut) se
+ *    retrouve dans la colline dès que le terrain dépasse cette hauteur. Avec les tuiles déjà en mémoire (deuxième ouverture), le relief est là : pas de défaut.
+ *    → la caméra est reposée quand Google dit que la scène est stable (gmp-steadychange), après chaque pose demandée par la vue.
+ * 2. Chaque geste reposait la caméra avec la hauteur RELUE dans la carte (k.center.altitude), que Google peut rendre dans un autre repère une fois
+ *    le relief chargé. → la hauteur reposée est toujours celle demandée par la vue (PV.alt), jamais une valeur relue.
+ * L'agent a bougé entre-temps : son cap, son inclinaison, sa distance et son point visé sont gardés ; seule la hauteur est reprise au sol.
+ */
+const SOL = { pret: false, aReposer: false, cible: null, poses: 0 };
+const hauteur = c => PV.alt != null ? PV.alt : (c && c.altitude) || 0;
+function noterPivot() { const k = P.carte, c = k && k.center; if (c && +k.range > 5) { PV.center = { lat: c.lat, lng: c.lng, altitude: hauteur(c) }; PV.range = +k.range; } }
+const occupee = () => !!(GL || A.raf || P.vol || CLIC.bas);
+/** Le sol de Google est prêt (scène stable) : la dernière pose demandée est refaite, une fois. Occupée (geste, vol) : au prochain signal stable. */
+function solPret() {
+  SOL.pret = true; const k = P.carte; if (!k || !SOL.aReposer || occupee()) return; SOL.aReposer = false; SOL.poses++;
+  const c = SOL.cible; if (c) Object.assign(k, { center: Object.assign({}, c.center), range: c.range, tilt: c.tilt, heading: c.heading }); else poser(+k.heading || 0, +k.tilt || 0);
+  etape("camera-sol");
+}
+/** L'agent a pris la main : sa vue est gardée (la pose demandée n'est plus refaite telle quelle). */
+const mainPrise = () => { SOL.cible = null; };
+window.__sol3d = () => ({ pret: SOL.pret, aReposer: SOL.aReposer, poses: SOL.poses, cible: !!SOL.cible, hauteur: PV.alt }); // essais seulement
 function pivot() {
   const k = P.carte, c = k.center; if (c && +k.range > 5) { noterPivot(); return PV; }
   if (c && PV.range) { // distance nulle : Google donne la position de la caméra ; le point visé est devant elle, à la dernière distance connue
     const R = PV.range, t = (+k.tilt || 0) * Math.PI / 180, h = (+k.heading || 0) * Math.PI / 180, hz = R * Math.sin(t);
-    return { center: { lat: c.lat + hz * Math.cos(h) / 111200, lng: c.lng + hz * Math.sin(h) / (111320 * Math.cos(c.lat * Math.PI / 180)), altitude: (c.altitude || 0) - R * Math.cos(t) }, range: R };
+    return { center: { lat: c.lat + hz * Math.cos(h) / 111200, lng: c.lng + hz * Math.sin(h) / (111320 * Math.cos(c.lat * Math.PI / 180)), altitude: PV.alt != null ? PV.alt : (c.altitude || 0) - R * Math.cos(t) }, range: R };
   }
   return PV.center ? PV : { center: c, range: +k.range || 150 };
 }
@@ -115,10 +139,10 @@ function image(now) {
 }
 /** Au repos, l'animation repart de la caméra courante (cap déroulé ensuite, sans saut de 359° à 0°). */
 function depart() { const k = P.carte; if (!A.raf && A.cap == null && A.incl == null && A.dist == null && !A.capV && !A.inclV && !A.tourFin) { A.h = +k.heading || 0; A.t = +k.tilt || 0; A.d = pivot().range; } }
-function zoomer(facteur) { if (!P.carte) return; depart(); A.dist = borneD((A.dist ?? A.d) * facteur); animer(); }
+function zoomer(facteur) { if (!P.carte) return; mainPrise(); depart(); A.dist = borneD((A.dist ?? A.d) * facteur); animer(); }
 function animer() { const k = P.carte; if (!k || A.raf) return; if (k.stopCameraAnimation) k.stopCameraAnimation(); A.raf = requestAnimationFrame(image); }
-function inclinerDe(pas) { if (!P.carte) return; __gestes.inclinaisons++; depart(); A.incl = borne((A.incl ?? A.t) + pas); animer(); }
-function tournerDe(pas) { if (!P.carte) return; depart(); A.cap = (A.cap ?? A.h) + pas; animer(); }
+function inclinerDe(pas) { if (!P.carte) return; mainPrise(); __gestes.inclinaisons++; depart(); A.incl = borne((A.incl ?? A.t) + pas); animer(); }
+function tournerDe(pas) { if (!P.carte) return; mainPrise(); depart(); A.cap = (A.cap ?? A.h) + pas; animer(); }
 const vraiCtrl = () => A.ctrlPage || A.ctrlVue;
 window.__gestes = { roues: 0, rouesCtrl: 0, inclinaisons: 0 }; // compteurs pour l'essai des gestes
 window.addEventListener("wheel", e => {
@@ -138,9 +162,11 @@ let GL = null;
  * Clic ou glisser (demande du 05/10/2026) : un mouvement de moins de 5 px reste un clic, et la caméra ne bouge pas à cause du clic lui-même
  * (Google déplaçait un peu le point visé au relâchement). Au-delà de 5 px, c'est un glisser : aucun choix, aucune bulle.
  */
-const CLIC = { x: 0, y: 0, bouge: false, pivot: null };
-window.addEventListener("pointerdown", e => { if (!P.carte || e.button !== 0) return; CLIC.x = e.clientX; CLIC.y = e.clientY; CLIC.bouge = false; const p = pivot(); CLIC.pivot = p && p.center ? { center: p.center, range: p.range, tilt: +P.carte.tilt, heading: +P.carte.heading } : null; }, true);
-window.addEventListener("pointermove", e => { if (!CLIC.bouge && (Math.abs(e.clientX - CLIC.x) > 5 || Math.abs(e.clientY - CLIC.y) > 5)) CLIC.bouge = true; }, true);
+const CLIC = { x: 0, y: 0, bouge: false, pivot: null, bas: false };
+window.addEventListener("pointerdown", e => { if (!P.carte || e.button !== 0) return; CLIC.bas = true; CLIC.x = e.clientX; CLIC.y = e.clientY; CLIC.bouge = false; const p = pivot(); CLIC.pivot = p && p.center ? { center: p.center, range: p.range, tilt: +P.carte.tilt, heading: +P.carte.heading } : null; }, true);
+window.addEventListener("pointermove", e => { if (!CLIC.bouge && (Math.abs(e.clientX - CLIC.x) > 5 || Math.abs(e.clientY - CLIC.y) > 5)) { CLIC.bouge = true; if (CLIC.bas) mainPrise(); } }, true);
+for (const ev of ["pointerup", "pointercancel"]) window.addEventListener(ev, e => { if (e.button === 0 || ev === "pointercancel") CLIC.bas = false; }, true);
+window.addEventListener("blur", () => { CLIC.bas = false; });
 /*
  * rc5.5 (SPEC-beta-finale §3, ligne de diagnostic) : chaque clic de souris reçu par la page est annoncé à l'extension (« reçu »), avant tout
  * traitement de Google ; le clic de Google qui suit (pastille ou bâtiment) porte le même numéro (« envoyé »). L'extension dit ensuite « accepté ».
@@ -153,7 +179,7 @@ window.addEventListener("pointerup", e => {
 }, true);
 window.addEventListener("pointerdown", e => {
   if (!P.carte) return; arreter(); const tourner = e.button === 2 || (e.button === 0 && (e.ctrlKey || vraiCtrl())); if (!tourner) return;
-  e.preventDefault(); e.stopImmediatePropagation(); GL = { x: e.clientX, y: e.clientY, h: +P.carte.heading || 0, t: +P.carte.tilt || 0, id: e.pointerId }; try { document.documentElement.setPointerCapture(e.pointerId); } catch (x) {}
+  e.preventDefault(); e.stopImmediatePropagation(); mainPrise(); GL = { x: e.clientX, y: e.clientY, h: +P.carte.heading || 0, t: +P.carte.tilt || 0, id: e.pointerId }; try { document.documentElement.setPointerCapture(e.pointerId); } catch (x) {}
 }, true);
 window.addEventListener("pointermove", e => { if (!GL || e.pointerId !== GL.id) return; e.preventDefault(); e.stopImmediatePropagation(); poser(GL.h - (e.clientX - GL.x) * 0.3, GL.t - (e.clientY - GL.y) * 0.25); }, true);
 const finGlisser = e => { if (!GL || (e && e.pointerId !== GL.id)) return; if (e) { e.preventDefault(); e.stopImmediatePropagation(); } GL = null; };
@@ -236,7 +262,9 @@ function pastilleProche(lat, lon) {
 function camera(d) {
   const k = P.carte; arreter(); if (k.stopCameraAnimation) k.stopCameraAnimation(); const p = pivot();
   const end = { center: d.center ? ll(d.center.lat, d.center.lon, d.center.alt) : p.center, range: d.range ?? p.range, tilt: d.tilt ?? +k.tilt, heading: d.heading ?? +k.heading };
+  if (d.center) PV.alt = end.center.altitude; else end.center = Object.assign({}, end.center, { altitude: hauteur(end.center) });
   PV.center = end.center; PV.range = end.range; // le point visé voulu par la vue
+  SOL.cible = { center: end.center, range: end.range, tilt: end.tilt, heading: end.heading }; SOL.aReposer = true; // refaite quand le sol sous ce point est chargé (signal stable de Google)
   // pose immédiate : Google rend parfois tout de suite la caméra par sa position (distance nulle). La caméra est reposée sur le point visé
   // et la distance voulus, sans changer l'image : la distance ne retombe jamais à zéro (ouverture, « Centrer », changement de candidate).
   if (!(d.duree > 0)) { Object.assign(k, end); const r = n => { if (GL || A.raf || P.vol || +k.range > 5 || n > 3) return; Object.assign(k, end); setTimeout(() => r(n + 1), 150); }; setTimeout(() => r(0), 100); return; }
@@ -254,12 +282,12 @@ window.__pivot3d = () => { const k = P.carte; if (!k) return null; const p = piv
 function traiter(d) {
   if (!P.carte) { P.enAttente.push(d); return; }
   if (d.type === "camera") camera(d); else if (d.type === "couches") dessiner(d);
-  else if (d.type === "orbite") { const k = P.carte, c = d.center ? ll(d.center.lat, d.center.lon, d.center.alt) : k.center; k.flyCameraAround({ camera: { center: c, range: d.range ?? k.range, tilt: d.tilt ?? k.tilt, heading: d.heading ?? k.heading }, durationMillis: d.duree || 24000, repeatCount: d.tours || 1 }); }
+  else if (d.type === "orbite") { mainPrise(); const k = P.carte, c = d.center ? ll(d.center.lat, d.center.lon, d.center.alt) : k.center; k.flyCameraAround({ camera: { center: c, range: d.range ?? k.range, tilt: d.tilt ?? k.tilt, heading: d.heading ?? k.heading }, durationMillis: d.duree || 24000, repeatCount: d.tours || 1 }); }
   else if (d.type === "stop") { arreter(); P.carte.stopCameraAnimation(); }
   else if (d.type === "gestes") P.carte.gestureHandling = d.actifs ? "GREEDY" : "NONE";
   else if (d.type === "incliner") { if (typeof d.pas === "number") inclinerDe(d.pas); if (typeof d.vitesse === "number") { if (d.vitesse) { depart(); A.inclV = d.vitesse; animer(); } else { A.inclV = 0; A.incl = null; } } }
   else if (d.type === "tourner" && typeof d.pas === "number") tournerDe(d.pas);
-  else if (d.type === "tour") { depart(); A.cap = null; A.tourCap = A.h + 360; A.capV = 360 / ((d.duree || 24000) / 1000); A.tourFin = performance.now() + (d.duree || 24000); animer(); } // un tour complet, même inclinaison, même distance, même point visé
+  else if (d.type === "tour") { mainPrise(); depart(); A.cap = null; A.tourCap = A.h + 360; A.capV = 360 / ((d.duree || 24000) / 1000); A.tourFin = performance.now() + (d.duree || 24000); animer(); } // un tour complet, même inclinaison, même distance, même point visé
 }
 if (!AUTORISEE) { msg("Page réservée au Localisateur Academia."); if (window.parent !== window && anc && /^chrome-extension:\/\//.test(anc)) window.parent.postMessage({ v: 1, type: "refus" }, anc); } // une extension que la page n'accepte pas : elle le dit (sans donnée), Google n'est pas chargé
 else {
