@@ -11,7 +11,8 @@ const txt = (v, n) => (v == null ? '' : String(v)).replace(/\s+/g, ' ').trim().s
 const rad = Math.PI / 180;
 const dist = (a, b, c, d) => { const x = (d - b) * rad * Math.cos((a + c) / 2 * rad), y = (c - a) * rad; return Math.hypot(x, y) * 6371000; };
 const med = a => { a = a.filter(v => v != null && !isNaN(v)).sort((x, y) => x - y); return a.length ? Math.round(a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2) : null; };
-const j = async (u, opt, ms) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms || 25000); try { const r = await fetch(u, Object.assign({signal: c.signal}, opt || {})); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.json(); } finally { clearTimeout(t); } };
+const j1 = async (u, opt, ms) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms || 25000); try { const r = await fetch(u, Object.assign({signal: c.signal}, opt || {})); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.json(); } finally { clearTimeout(t); } };
+const j = async (u, opt, ms, retry) => { try { return await j1(u, opt, ms); } catch (e) { if (retry === false) throw e; await new Promise(r => setTimeout(r, 700)); return j1(u, opt, ms); } };
 
 /* ---------- 1. Lecture de l'annonce ---------- */
 async function lireAnnonce(url) {
@@ -265,21 +266,31 @@ async function collect(input, onStep) {
         nl: +p.nombre_de_logements || 0, u: txt(p.usage_1, 20), n: txt(p.nature, 24), c, g: rings, id: p.cleabs || null, et: p.nombre_d_etages != null ? +p.nombre_d_etages : null, an: p.date_d_apparition ? String(p.date_d_apparition).slice(0, 4) : null}; }).filter(Boolean);
   }));
 
-  /* Vivre ici (OpenStreetMap) */
-  tasks.push(step('Vivre ici', async () => {
-    const q = `[out:json][timeout:7];(node(around:700,${lat0},${lon0})[amenity~"^(school|kindergarten|college|pharmacy|doctors|hospital|post_office|bank|restaurant|cafe|bar)$"];node(around:700,${lat0},${lon0})[shop~"^(supermarket|bakery|convenience|butcher|greengrocer|mall)$"];node(around:700,${lat0},${lon0})[highway=bus_stop];node(around:2000,${lat0},${lon0})[railway~"^(station|halt|tram_stop)$"];node(around:900,${lat0},${lon0})[leisure~"^(park|playground|sports_centre|pitch)$"];way(around:900,${lat0},${lon0})[leisure~"^(park|sports_centre)$"];node(around:3000,${lat0},${lon0})[natural=beach];way(around:3000,${lat0},${lon0})[natural=beach];);out center 300;`;
+  /* Vivre ici : IGN (écoles, santé, sport, culture, transports, mer) + OpenStreetMap en bonus (commerces, bus) */
+  const centroid = geom => { const rings = geomRings(geom); if (!rings.length) { if (geom && geom.type === 'Point') return geom.coordinates; return null; } const pts = rings[0][0]; return [pts.reduce((a, q) => a + q[0], 0) / pts.length, pts.reduce((a, q) => a + q[1], 0) / pts.length]; };
+  const wfs = (layer, m, count) => { const dLa = m / KY, dLo = m / KX; return j(`https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAME=${layer}&OUTPUTFORMAT=application/json&SRSNAME=CRS:84&COUNT=${count || 300}&BBOX=${lon0 - dLo},${lat0 - dLa},${lon0 + dLo},${lat0 + dLa},CRS:84`, null, 15000); };
+  const vivre = {};
+  const addV = (k, n, d, o, kind) => { (vivre[k] = vivre[k] || []).push({n: txt(n, 44), d, o, k: kind}); };
+  tasks.push(step('Vivre ici (IGN)', async () => {
+    const [zai, tr, mer] = await Promise.all([wfs('BDTOPO_V3:zone_d_activite_ou_d_interet', 800, 300).catch(() => null), wfs('BDTOPO_V3:equipement_de_transport', 2000, 300).catch(() => null), wfs('BDTOPO_V3:limite_terre_mer', 3000, 60).catch(() => null)]);
+    (zai && zai.features || []).forEach(f => { const p = f.properties; const c = centroid(f.geometry); if (!c) return; const d = Math.round(dist(lat0, lon0, c[1], c[0])); if (d > 800) return; const cat = p.categorie || '', nat = p.nature || '';
+      const k = /enseignement/i.test(cat) ? 'ecoles' : /sant/i.test(cat) ? 'sante' : /sport/i.test(cat) ? 'sport' : /culture/i.test(cat) ? (/espace public/i.test(nat) ? 'parcs' : 'culture') : /administratif/i.test(cat) ? 'services' : /religieux/i.test(cat) ? 'culte' : null;
+      if (k) addV(k, p.toponyme || nat, d, off(c[1], c[0]), nat); });
+    (tr && tr.features || []).forEach(f => { const p = f.properties; const nat = p.nature || ''; if (!/gare|port|aéro|téléph|station/i.test(nat)) return; const c = centroid(f.geometry); if (!c) return; const d = Math.round(dist(lat0, lon0, c[1], c[0])); addV('gares', p.toponyme || nat, d, off(c[1], c[0]), nat); });
+    if (mer && mer.features && mer.features.length) { let dm = 1e9; mer.features.forEach(f => { const g = f.geometry; const lines = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : []; lines.forEach(l => l.forEach(q => { const d = dist(lat0, lon0, q[1], q[0]); if (d < dm) dm = d; })); }); if (dm < 1e9) vivre.mer = Math.round(dm); }
+    P.vivre = vivre;
+  }));
+  tasks.push(step('Vivre ici (OSM)', async () => {
+    const q = `[out:json][timeout:6];(node(around:600,${lat0},${lon0})[shop~"^(supermarket|bakery|convenience|butcher|greengrocer|mall)$"];node(around:600,${lat0},${lon0})[amenity~"^(pharmacy|doctors|restaurant|cafe|bar|post_office|bank)$"];node(around:600,${lat0},${lon0})[highway=bus_stop];);out 120;`;
     let r = null, lastErr = null;
-    for (const ep of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) { try { r = await j(ep, {method: 'POST', body: 'data=' + encodeURIComponent(q)}, 8000); if (r && r.elements) break; } catch (e) { lastErr = e; r = null; } }
-    if (!r) throw lastErr || new Error('Overpass indisponible');
-    const cat = t => (t.amenity === 'school' || t.amenity === 'kindergarten' || t.amenity === 'college') ? 'ecoles' : (t.amenity === 'pharmacy' || t.amenity === 'doctors' || t.amenity === 'hospital') ? 'sante' : t.shop ? 'commerces' : t.amenity ? 'cafes' : t.highway === 'bus_stop' ? 'bus' : t.railway ? 'gares' : t.leisure ? 'loisirs' : t.natural === 'beach' ? 'plage' : null;
-    const out = {};
-    r.elements.forEach(e => { const la = e.lat || (e.center && e.center.lat), lo = e.lon || (e.center && e.center.lon); if (!la) return; const tg = e.tags || {}; const c = cat(tg); if (!c) return;
-      const d = Math.round(dist(lat0, lon0, la, lo)); (out[c] = out[c] || []).push({n: txt(tg.name || '', 40), d, o: off(la, lo), k: tg.amenity || tg.shop || tg.leisure || tg.railway || tg.natural || tg.highway}); });
-    Object.keys(out).forEach(k => { out[k].sort((a, b) => a.d - b.d); out[k] = {n: out[k].length, items: out[k].slice(0, 6)}; });
-    P.vivre = out;
+    for (const ep of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) { try { r = await j(ep, {method: 'POST', body: 'data=' + encodeURIComponent(q)}, 6500, false); if (r && r.elements) break; } catch (e) { lastErr = e; r = null; } }
+    if (!r) throw lastErr || new Error('OpenStreetMap indisponible');
+    r.elements.forEach(e => { if (!e.lat) return; const tg = e.tags || {}; const k = tg.shop ? 'commerces' : tg.highway === 'bus_stop' ? 'bus' : (tg.amenity === 'pharmacy' || tg.amenity === 'doctors') ? 'sante' : 'cafes'; addV(k, tg.name || tg.shop || tg.amenity || 'arrêt de bus', Math.round(dist(lat0, lon0, e.lat, e.lon)), off(e.lat, e.lon), tg.shop || tg.amenity || tg.highway); });
+    P.vivre = vivre;
   }));
 
   await Promise.all(tasks);
+  if (P.vivre) { const out = {}; Object.keys(P.vivre).forEach(k => { if (k === 'mer') { out.mer = P.vivre.mer; return; } const seen = {}; const arr = P.vivre[k].filter(it => { const key = (it.n || '') + '|' + Math.round(it.d / 20); if (seen[key]) return false; seen[key] = 1; return true; }).sort((a, b) => a.d - b.d); out[k] = {n: arr.length, items: arr.slice(0, 6)}; }); P.vivre = out; }
   P.duree = Math.round((performance.now() - t0) / 1000);
   return P;
 }

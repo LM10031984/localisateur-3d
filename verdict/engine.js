@@ -125,7 +125,12 @@ VA.sun = function (P) {
   const ring = bS ? closed(bS.g[0]) : [];
   const minY = ring.length ? Math.min(...ring.map(p => p[1])) : 0;
   const edgeX = ring.filter(p => p[1] <= minY + 1.5).map(p => p[0]);
-  const sud = edgeX.length ? [0.15, 0.5, 0.85].map(t => [Math.min(...edgeX) + 1.5 + t * Math.max(0, Math.max(...edgeX) - Math.min(...edgeX) - 3), minY - 3]) : [];
+  const others = bS ? B.filter(b => b !== bS) : [];
+  const ringDist = (r1, r2) => { let dm = 1e9; r1.forEach(p => r2.forEach(q => { const d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d < dm) dm = d; })); return dm; };
+  const attached = bS ? others.filter(b => ringDist(ring, closed(b.g[0])) < 1.2) : [];
+  const inAnyBuilding = pt => others.some(b => b.g.some(r => inPoly(pt, closed(r)))) || (bS && bS.g.some(r => inPoly(pt, closed(r))));
+  let sud = [];
+  if (edgeX.length) { for (const dy of [3, 6, 9]) { const pts = [0.15, 0.5, 0.85].map(t => [Math.min(...edgeX) + 1.5 + t * Math.max(0, Math.max(...edgeX) - Math.min(...edgeX) - 3), minY - dy]).filter(p => !inAnyBuilding(p)); if (pts.length >= 2) { sud = pts; break; } } }
   const vec = (el, az) => { const Lsh = Math.min(1 / Math.tan(el * rad), 80); const a = (az + 180) * rad; return [Lsh * Math.sin(a), Lsh * Math.cos(a)]; };
   const sub = (p, px) => { p = p.map(px); if (area(p) < 0) p = p.slice().reverse(); return 'M' + p.map(q => q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join('L') + 'Z'; };
   const shadows = (el, az, px) => {
@@ -137,12 +142,12 @@ VA.sun = function (P) {
   const shadedBy = (el, az) => {
     if (!sud.length || el <= 0.5 || !bS) return null;
     const [ux, uy] = vec(el, az); let hits = 0; const who = {};
-    sud.forEach(pt => { for (const b of B) { if (b === bS || Math.hypot(b.c[0] - bS.c[0], b.c[1] - bS.c[1]) < 6) continue; const h = ((b.zs != null && bS.zs != null) ? b.zs - bS.zs : 0) + (b.h || 3); if (h <= 0.3) continue; const vx = ux * h, vy = uy * h; let hit = false;
+    sud.forEach(pt => { for (const b of B) { if (b === bS || attached.includes(b)) continue; const h = ((b.zs != null && bS.zs != null) ? b.zs - bS.zs : 0) + (b.h || 3); if (h <= 0.3) continue; const vx = ux * h, vy = uy * h; let hit = false;
       for (const r0 of b.g) { const r = closed(r0); if (inPoly(pt, r.map(([x, y]) => [x + vx, y + vy]))) { hit = true; break; } for (let i = 0; i < r.length && !hit; i++) { const a = r[i], c = r[(i + 1) % r.length]; if (inPoly(pt, [a, c, [c[0] + vx, c[1] + vy], [a[0] + vx, a[1] + vy]])) hit = true; } }
       if (hit) { hits++; const d = Math.round(Math.hypot(b.c[0] - bS.c[0], b.c[1] - bS.c[1])); who[(b.nl > 2 ? 'd’un immeuble' : 'd’un bâtiment') + ' voisin à ' + d + ' m'] = 1; break; } } });
     return {part: hits / sud.length, who: Object.keys(who)};
   };
-  const etat = (s, h) => { const {el, az} = solar(s.doy, s.tz, h); if (el <= 0) return {el, az, nuit: true}; let jd = 'ok', who = []; const sb = shadedBy(el, az); if (sb && sb.part >= 0.5) { jd = 'ombre'; who = sb.who; } else if (sb && sb.part > 0) { jd = 'partiel'; who = sb.who; } if (!bS) jd = 'na'; return {el, az, jd, who}; };
+  const etat = (s, h) => { const {el, az} = solar(s.doy, s.tz, h); if (el <= 0) return {el, az, nuit: true}; let jd = 'ok', who = []; const sb = shadedBy(el, az); if (sb && sb.part >= 0.5) { jd = 'ombre'; who = sb.who; } else if (sb && sb.part > 0) { jd = 'partiel'; who = sb.who; } if (!bS || !sud.length) jd = 'na'; return {el, az, jd, who}; };
   const hhmm = h => { const m = Math.round(h * 60); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; };
   const dur = h => { const m = Math.round(h * 60); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
   const plages = s => {
@@ -150,9 +155,9 @@ VA.sun = function (P) {
     for (let h = 4; h <= 22; h += 1 / 6) { const x = etat(s, h); if (prev && prev.nuit && !x.nuit) lever = h; if (prev && !prev.nuit && x.nuit) coucher = h;
       const on = !x.nuit && x.jd === 'ok'; if (on) { if (seg.length && Math.abs(seg[seg.length - 1][1] - (h - 1 / 6)) < 1e-6) seg[seg.length - 1][1] = h; else seg.push([h, h]); } prev = x; }
     const tot = seg.reduce((a, p) => a + p[1] - p[0], 0);
-    return {lever, coucher, seg: seg.filter(p => p[1] - p[0] >= 0.25), tot, txt: seg.length ? seg.filter(p => p[1] - p[0] >= 0.25).map(p => `${hhmm(p[0])} → ${hhmm(p[1])}`).join(', ') + ` (${dur(tot)})` : 'jamais (toujours à l’ombre d’un voisin)'};
+    return {lever, coucher, seg: seg.filter(p => p[1] - p[0] >= 0.25), tot, txt: (!bS || !sud.length) ? 'terrasse non identifiable' : seg.length ? seg.filter(p => p[1] - p[0] >= 0.25).map(p => `${hhmm(p[0])} → ${hhmm(p[1])}`).join(', ') + ` (${dur(tot)})` : 'jamais (toujours à l’ombre d’un voisin)'};
   };
-  return {SEASONS, solar, shadows, etat, plages, hhmm, dur, sujet: bS, sud};
+  return {SEASONS, solar, shadows, etat, plages, hhmm, dur, sujet: bS, sud, attached};
 };
 
 /* ---------- carte SVG ---------- */

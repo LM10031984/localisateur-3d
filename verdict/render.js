@@ -183,6 +183,7 @@ function secSoleil(P, est, ctx) {
         <div class="seg" role="group" aria-label="Saison" id="sunSeason"><button type="button" aria-pressed="true" data-s="hiver">21 déc.</button><button type="button" aria-pressed="false" data-s="equinoxe">21 mars</button><button type="button" aria-pressed="false" data-s="ete">21 juin</button></div>
         <label class="sun-hour"><span class="mono" id="sunTime">14 h 00</span><input type="range" id="sunHour" min="6" max="20" step="0.25" value="14" aria-label="Heure"></label>
       </div>
+      ${(() => { const pb = VA.parcelleDe(P, bS); if (!pb || !pb.g || !pb.g.length) return ''; const ring = VA.geo.closed(pb.g[0]); const n = (P.carte.bati || []).filter(b => b.h >= 2.8 && VA.geo.inPoly(b.c, ring)).length; return n > 1 ? `<p class="note">La parcelle porte ${n} bâtiments : le calcul vise le plus probable (voir « Bâtiments de la parcelle »), à confirmer sur place.</p>` : ''; })()}
       <p id="sunRead" style="margin:4px 0 2px"></p><p id="sunJ" style="margin:0 0 10px"></p>
       <div class="tbl"><table><thead><tr><th>Saison</th><th>Lever · coucher</th><th>Soleil direct sur la façade sud / terrasse (hors relief lointain et arbres)</th></tr></thead><tbody>${rowsTbl}</tbody></table></div>
       <p class="note" style="margin-top:8px">Ombres calculées sur les hauteurs de la BD TOPO, sol plat autour de chaque bâtiment ; la différence d’altitude entre le bien et ses voisins est prise en compte pour la terrasse. Le relief lointain et la végétation ne sont pas mesurés ici. Heures légales (Paris).</p>
@@ -232,11 +233,12 @@ function secCopro(P, ctx) {
 }
 
 function secVivre(P) {
-  const V = P.vivre; if (!V) return '';
-  const lab = {ecoles: 'Écoles', commerces: 'Commerces', cafes: 'Cafés, restaurants, services', sante: 'Santé', bus: 'Arrêts de bus', gares: 'Gares et tram', loisirs: 'Parcs et sport', plage: 'Plage'};
-  const order = ['ecoles', 'commerces', 'bus', 'gares', 'sante', 'loisirs', 'plage', 'cafes'];
-  return `<section id="vivre" class="sec"><div class="sec-h"><span class="n">07</span><h2>Vivre ici</h2><p>Ce qu’il y a autour, à pied (OpenStreetMap, 700 m ; gares 2 km ; plage 3 km).</p></div>
-    <div class="grid g4">${order.filter(k => V[k]).map(k => `<div class="card" style="padding:14px 16px"><span class="kicker">${lab[k]}</span><div style="font-family:var(--display);font-size:24px;font-weight:800;margin:4px 0 2px">${V[k].n}</div><div class="small muted">${V[k].items.slice(0, 3).map(it => `${esc(it.n || it.k)} · ${it.d} m`).join('<br>')}</div></div>`).join('')}</div></section>`;
+  const V = P.vivre; if (!V || !Object.keys(V).length) return '';
+  const lab = {ecoles: 'Écoles, collèges, lycées', sante: 'Santé', commerces: 'Commerces', cafes: 'Cafés, restaurants, services', bus: 'Arrêts de bus', gares: 'Gares, ports', sport: 'Sport', parcs: 'Parcs, espaces publics', culture: 'Culture', services: 'Mairie, administrations', culte: 'Lieux de culte'};
+  const order = ['ecoles', 'commerces', 'bus', 'gares', 'sante', 'sport', 'parcs', 'culture', 'services', 'cafes', 'culte'];
+  const mer = V.mer != null ? `<span class="chip acc">Mer à ${V.mer >= 1000 ? fr1(V.mer / 1000) + ' km' : V.mer + ' m'}</span>` : '';
+  return `<section id="vivre" class="sec"><div class="sec-h"><span class="n">07</span><h2>Vivre ici</h2><p>Ce qu’il y a autour (IGN BD TOPO à 800 m, gares à 2 km ; commerces et bus OpenStreetMap à 600 m quand le service répond). ${mer}</p></div>
+    <div class="grid g4">${order.filter(k => V[k] && V[k].n).map(k => `<div class="card" style="padding:14px 16px"><span class="kicker">${lab[k]}</span><div style="font-family:var(--display);font-size:24px;font-weight:800;margin:4px 0 2px">${V[k].n}</div><div class="small muted">${V[k].items.slice(0, 3).map(it => `${esc(it.n || it.k)} · ${it.d >= 1000 ? fr1(it.d / 1000) + ' km' : it.d + ' m'}`).join('<br>')}</div></div>`).join('')}</div></section>`;
 }
 
 function secAcheteur(P, est, ctx) {
@@ -308,7 +310,7 @@ function secSuivi(P, est, ctx) {
 function secMethode(P) {
   const E = P.etapes || {};
   const srcs = [['Annonce', P.annonce.portail === 'Bien’ici' ? 'Bien’ici, fiche publique de l’annonce (position floutée par le portail)' : 'saisie du conseiller'], ['Adresse', 'Base Adresse Nationale (api-adresse.data.gouv.fr) ; DPE ADEME (data.ademe.fr, dpe03existant) pour retrouver l’adresse'],
-    ['Ventes', (P.marche && P.marche.source) || 'DVF Etalab (app.dvf.etalab.gouv.fr)'], ['Cadastre et PLU', 'API Carto IGN (cadastre, Géoportail de l’urbanisme)'], ['Bâtiments', 'BD TOPO V3 IGN (hauteurs, logements, altitudes)'], ['Copropriétés', 'Registre national des copropriétés (data.gouv.fr)'], ['Risques', 'Géorisques (argile, séisme, radon, TRI, CatNat, rapport au point)'], ['Vivre ici', 'OpenStreetMap (Overpass)']];
+    ['Ventes', (P.marche && P.marche.source) || 'DVF Etalab (app.dvf.etalab.gouv.fr)'], ['Cadastre et PLU', 'API Carto IGN (cadastre, Géoportail de l’urbanisme)'], ['Bâtiments', 'BD TOPO V3 IGN (hauteurs, logements, altitudes)'], ['Copropriétés', 'Registre national des copropriétés (data.gouv.fr)'], ['Risques', 'Géorisques (argile, séisme, radon, TRI, CatNat, rapport au point)'], ['Vivre ici', 'IGN BD TOPO (écoles, santé, sport, culture, transports, trait de côte) et OpenStreetMap (commerces, bus)']];
   return `<section id="methode" class="sec"><div class="sec-h"><span class="n">12</span><h2>Méthode, sources, limites</h2></div>
     <div class="grid g2"><div class="card"><h3>Comment c’est calculé</h3><ul style="padding-left:18px;font-size:14px;display:flex;flex-direction:column;gap:6px;margin:8px 0 0">
       <li><b>Adresse :</b> le DPE de la commune dont la date, la consommation, les émissions et le coût collent à l’annonce ; score et certitude affichés, candidats listés.</li>
@@ -345,7 +347,7 @@ VA.wireDossier = function (root, P, ctx) {
     if (x.nuit) { if (gSun) gSun.innerHTML = ''; if (read) read.innerHTML = `<b>${S.hhmm(hour)}, ${s.lab}</b> : le soleil est couché.`; if (jEl) jEl.innerHTML = ''; return; }
     if (gSun) { const d = S.shadows(x.el, x.az, px); const sp = px([Math.max(-238, Math.min(238, 215 * Math.sin(x.az * Math.PI / 180))), Math.max(-214, Math.min(214, 215 * Math.cos(x.az * Math.PI / 180)))]); gSun.innerHTML = `<path d="${d}" fill="rgba(28,36,80,.34)" fill-rule="nonzero"/><g><circle cx="${sp[0].toFixed(1)}" cy="${sp[1].toFixed(1)}" r="8" fill="#f2b705" stroke="#fff" stroke-width="1.5"/><text x="${sp[0].toFixed(1)}" y="${(sp[1] + 20).toFixed(1)}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#15171c">soleil ${Math.round(x.az)}°</text></g>`; }
     if (read) read.innerHTML = `<b>${S.hhmm(hour)}, ${s.lab}</b> : soleil ${dirs[Math.round(x.az / 45) % 8]} (azimut ${Math.round(x.az)}°), ${Math.round(x.el)}° au-dessus de l’horizon ; une maison de 7 m porte une ombre de ${Math.round(Math.min(7 / Math.tan(x.el * Math.PI / 180), 560))} m.`;
-    if (jEl) jEl.innerHTML = S.sujet ? `Façade sud / terrasse du bien : ${x.jd === 'ok' ? '<span class="sun-ok">au soleil</span>' : x.jd === 'ombre' ? '<span class="sun-no">à l’ombre ' + x.who.join(' et ') + '</span>' : x.jd === 'partiel' ? '<span class="sun-no">en partie à l’ombre ' + x.who.join(' et ') + '</span>' : '<span class="sun-na">non calculable</span>'}.` : '<span class="sun-na">Bâtiment du bien non identifié : les ombres sont dessinées, pas l’état de la terrasse.</span>'; };
+    if (jEl) jEl.innerHTML = S.sujet && !S.sud.length ? '<span class="sun-na">Terrasse non identifiable (bâtiments accolés) : les ombres sont dessinées, pas l’état de la terrasse.</span>' : S.sujet ? `Façade sud / terrasse du bien : ${x.jd === 'ok' ? '<span class="sun-ok">au soleil</span>' : x.jd === 'ombre' ? '<span class="sun-no">à l’ombre ' + x.who.join(' et ') + '</span>' : x.jd === 'partiel' ? '<span class="sun-no">en partie à l’ombre ' + x.who.join(' et ') + '</span>' : '<span class="sun-na">non calculable</span>'}.` : '<span class="sun-na">Bâtiment du bien non identifié : les ombres sont dessinées, pas l’état de la terrasse.</span>'; };
   root.querySelectorAll('#sunSeason button').forEach(b => b.addEventListener('click', () => { season = b.dataset.s; root.querySelectorAll('#sunSeason button').forEach(o => o.setAttribute('aria-pressed', o === b)); render(); }));
   const slider = root.querySelector('#sunHour'); if (slider) slider.addEventListener('input', () => { hour = +slider.value; render(); });
   render();
