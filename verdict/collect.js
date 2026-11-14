@@ -92,10 +92,10 @@ async function collect(input, onStep) {
   if (input.annonce) { A = JSON.parse(JSON.stringify(input.annonce)); delete A.residence; delete A.adresseConnue; if (A.blur && A.blur.type === 'conseiller') { A.blur = A.blur0 || null; } }
   else if (input.url) { A = await lireAnnonce(input.url); }
   else if (input.fiche) { A = depuisFiche(input.fiche); }
-  if (A && input.residence && input.residence.lat) { A.residence = {adr: input.residence.adr || null, nom: input.residence.nom || null, im: input.residence.im || null, lat: +input.residence.lat, lon: +input.residence.lon}; A.adresseConnue = true; A.adresse = A.residence.adr || A.adresse; if (A.blur && A.blur.type !== 'conseiller') A.blur0 = A.blur; A.blur = {lat: A.residence.lat, lon: A.residence.lon, r: 20, type: 'conseiller'}; }
   else if (input.manuel) { A = Object.assign({v: VERSION, capture: new Date().toISOString(), portail: input.manuel.portail || 'saisie', id: 'man-' + Date.now().toString(36), photos: 0}, input.manuel); }
   else if (input.adresse) { A = {v: VERSION, mode: 'adresse', q: input.adresse, capture: new Date().toISOString(), type: '?', id: 'adr-' + Date.now().toString(36)}; }
   else throw new Error('Rien à analyser.');
+  if (A && input.residence && input.residence.lat) { A.residence = {adr: input.residence.adr || null, nom: input.residence.nom || null, im: input.residence.im || null, lat: +input.residence.lat, lon: +input.residence.lon}; A.adresseConnue = true; A.adresse = A.residence.adr || A.adresse; if (A.blur && A.blur.type !== 'conseiller') A.blur0 = A.blur; A.blur = {lat: A.residence.lat, lon: A.residence.lon, r: 20, type: 'conseiller'}; }
   P.annonce = A;
 
   let lat0, lon0, insee, centre = {};
