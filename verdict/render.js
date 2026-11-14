@@ -18,7 +18,8 @@ VA.phraseVerdict = function (P, est) {
   const base = `Affiché ${eur(A.prix)} pour ${fmt(A.surface)} m² (${m2(A.prix / A.surface)}). ${resi ? `Les ventes de la résidence elle-même (${est.nRes} des 5 comparables), recalées à aujourd’hui,` : 'Au m² standard du quartier, cinq ventes comparables recalées à aujourd’hui'} donnent <b>${eur(est.valeur)}</b> : ${pct(e)}.`;
   if (!on.length) return base + ` L’annonce est <b>${l}</b>.${deja.length ? ` ${deja.map(a => a.l.replace(/ \(annonce\)/, '').toLowerCase()).join(', ')} : déjà dans les prix de la résidence.` : ''} Huit cas sur dix se vendraient entre ${kE(est.fourchette[0])} et ${kE(est.fourchette[1])}.`;
   const lst = on.map(a => a.l.replace(/ \(annonce\)/, '').toLowerCase() + ' ' + (a.p ? (a.p > 0 ? '+' : '') + fr1(a.p) + ' %' : (a.e > 0 ? '+' : '') + kE(a.e))).join(', ');
-  return base + ` ${resi ? 'Ce qui est propre à ce logement' : 'Mais les ventes publiques ne voient ni la vue, ni l’étage, ni l’état : ce que l’annonce promet'} (${lst}) porte la valeur à <b>${eur(est.valeurAj)}</b> : l’annonce est <b>${est.libelleAj.t.toLowerCase()}</b> (${pct(est.ecartAj)}).${deja.length ? ` ${deja.map(a => a.l.replace(/ \(annonce\)/, '').toLowerCase()).join(', ')} : déjà dans les prix de la résidence.` : ''} À vérifier en visite : c’est là que se joue le prix.`;
+  const sumAuto = on.filter(a => a.auto).reduce((s, a) => s + (+a.p || 0), 0); const plaf = sumAuto > est.capAuto ? ` (plafonnés à +${est.capAuto} % : les meilleures ventes récentes du quartier sont à ${m2(est.near90)})` : '';
+  return base + ` ${resi ? 'Ce qui est propre à ce logement' : 'Mais les ventes publiques ne voient ni la vue, ni l’étage, ni l’état : ce que l’annonce promet'} (${lst})${plaf} porte la valeur à <b>${eur(est.valeurAj)}</b> : l’annonce est <b>${est.libelleAj.t.toLowerCase()}</b> (${pct(est.ecartAj)}).${deja.length ? ` ${deja.map(a => a.l.replace(/ \(annonce\)/, '').toLowerCase()).join(', ')} : déjà dans les prix de la résidence.` : ''} À vérifier en visite : c’est là que se joue le prix.`;
 };
 
 /* ---------- sections ---------- */
@@ -73,7 +74,8 @@ function secHero(P, est, ctx) {
         <div class="row" style="gap:8px">${chips.join('')}</div>
         <h1>${esc(VA.titreDossier(P))}</h1>
         ${adrLine}
-        <p style="font-size:15.5px;margin:4px 0 0">${VA.phraseVerdict(P, est)}</p>
+        <div class="tiles hero-tiles">${tiles.replace(/^\s*<div class="tiles">/, '').replace(/<\/div>\s*$/, '')}</div>
+        <p class="lead">${VA.phraseVerdict(P, est)}</p>
         ${est && est.valeur ? (() => { const L = (est.items || []).some(a => a.on) ? est.libelleAj : est.libelle; return `<div style="margin-top:6px"><div class="vb-lab"><span>Sous le marché</span><span>Dans le marché</span><span>Un peu au-dessus</span><span>Au-dessus</span></div><div class="verdict-bar"><div class="${L.c === 'ok' ? 'on' : ''}" style="background:#2d8a4e"></div><div class="${L.c === 'acc' ? 'on' : ''}" style="background:#2F44CE"></div><div class="${L.c === 'warn' ? 'on' : ''}" style="background:#b7791f"></div><div class="${L.c === 'bad' ? 'on' : ''}" style="background:#c0392b"></div></div></div>`; })() : ''}
         ${est && est.deuxMarches && A.mode !== 'adresse' ? `<div class="deux"><b>Quartier à deux vitesses.</b> À 350 m, les ventes de 3 ans vont de ${m2(est.deuxMarches.p25)} à ${m2(est.deuxMarches.p90)} (médiane ${m2(est.deuxMarches.med)}).${est.deuxMarches.hauts.length ? ' Les plus chères : ' + est.deuxMarches.hauts.map(h => esc(niceAdr(h.rue)) + ' ' + m2(h.med)).join(', ') + '.' : ''} Sans l’adresse, le verdict compare au m² moyen : <b>précisez la résidence ci-dessous</b> pour comparer avec ses propres ventes.</div>` : ''}
         <div class="row noprint" style="margin-top:6px">
@@ -103,7 +105,7 @@ function secHero(P, est, ctx) {
         </dl>
       </div>
     </div>
-    <div style="margin-top:16px">${tiles}</div></section>`;
+    </section>`;
 }
 
 /* « Vous savez où c'est ? » : l'adresse ou la résidence, en un clic, puis le dossier se refait centré dessus (comparables de la résidence d'abord) */
@@ -177,7 +179,7 @@ function secPrix(P, est, ctx) {
   const fmtP = a => a.p ? ((a.p > 0 ? '+' : '') + fr1(a.p) + ' %') : ((a.e > 0 ? '+' : '') + kE(a.e));
   const adjHtml = ctx.standalone ? '' : `<div class="card" style="margin-top:16px" id="ajust"><div class="sec-h"><h3>Ce que les ventes ne voient pas : les atouts annoncés, et ce que vous avez vu</h3><p>Les ventes publiques (DVF) donnent le m² standard du quartier. Vue, étage, terrasse, piscine, garage, état : l’annonce les affirme, la visite les confirme. Chaque ligne est un ordre de grandeur, à votre main : décochez, corrigez, ajoutez. Les vôtres restent à part de la statistique.</p></div>
       <ul class="adj" id="adjList">${items.map((a, i) => `<li data-k="${esc(a.k || '')}" data-auto="${a.auto ? 1 : 0}" class="${a.on ? '' : 'off'}"><input type="checkbox" data-adj-on ${a.on ? 'checked' : ''} aria-label="Compter"><span class="lab">${a.auto ? `<b>${esc(a.l)}</b><small>${esc(a.plage || '')} · d’après l’annonce${a.deja ? ' · <b>déjà dans les prix de la résidence</b>' : ''}</small>` : `<input type="text" data-adj-l value="${esc(a.l || '')}" placeholder="Ce que vous avez vu (ex. vue dégagée, toiture à reprendre)">`}</span>${a.e && !a.p ? `<span class="val"><input type="number" data-adj-e value="${a.e}" step="1000" min="-100000" max="200000"> €</span>` : `<span class="val"><input type="number" data-adj-p value="${a.p || 0}" step="0.5" min="-40" max="60"> %</span>`}${a.auto ? '' : `<button class="btn-s" data-adj-del aria-label="Supprimer">✕</button>`}</li>`).join('')}</ul>
-      <div class="row" style="margin-top:8px"><button class="btn-s" data-act="adj-add">+ Ajouter ce que vous avez vu</button><span class="note">Les atouts annoncés se cumulent jusqu’à +30 % (ils se recoupent) ; ce que vous avez vu s’ajoute, ±25 %. Au-delà de ±20 % sur une ligne, justifiez-la au vendeur.</span></div>
+      <div class="row" style="margin-top:8px"><button class="btn-s" data-act="adj-add">+ Ajouter ce que vous avez vu</button><span class="note">Les atouts annoncés se cumulent jusqu’à <b>+${est.capAuto} %</b>${est.near90 ? ` : au-delà, le bien vaudrait plus que les meilleures ventes récentes du quartier (${m2(est.near90)}, 9e décile à 350 m)` : ''} ; ce que vous avez vu s’ajoute, ±25 %.</span></div>
       <div class="total"><div><span class="k">${est.nRes >= 3 ? 'Ventes de la résidence' : 'Au m² standard'}</span><b>${eur(est.valeur)}</b></div><div class="op">${est.tot ? (est.tot > 0 ? '+' : '') + fr1(est.tot) + ' %' : ''}${est.totE ? (est.tot ? ' ' : '') + (est.totE > 0 ? '+' : '') + kE(est.totE) : ''}${!est.tot && !est.totE ? 'aucun atout coché' : ''}</div><div><span class="k">Avec les atouts${on.some(a => !a.auto) ? ' et vos ajustements' : ''}</span><b class="big">${eur(est.valeurAj)}</b></div><div class="${est.libelleAj.c}"><span class="k">Verdict</span><b>${est.libelleAj.t}</b><small class="mono">${pct(est.ecartAj)}</small></div></div>
       ${est.excl ? `<p class="note">${est.excl} vente${est.excl > 1 ? 's' : ''} écartée${est.excl > 1 ? 's' : ''} par vous · <button type="button" class="xs" data-act="adj-unx">rétablir</button></p>` : ''}
     </div>`;

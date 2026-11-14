@@ -40,29 +40,29 @@ VA.atouts = function (P) {
   const A = P.annonce || {}; const type = VA.typeBien(P); const t = ((A.titre || '') + ' ' + (A.desc || '')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const has = re => re.test(t); const out = []; const add = (k, l, p, plage, e) => out.push({k, l, p, plage, e: e || 0, auto: true});
   const mer = A.vueMer || has(/vue (?:mer|sur la mer|sur mer|panoramique)|donne sur la mer|face (?:a la )?mer|front de mer|pieds dans l'eau|vue imprenable|vue degagee sur la mer|vue baie/);
-  if (mer) { const pano = has(/panoramique|pieds dans l'eau|front de mer|face (?:a la )?mer|vue imprenable|premiere ligne/); add('mer', pano ? 'Vue mer dégagée ou front de mer (annonce)' : 'Vue mer (annonce)', pano ? 25 : 15, pano ? '15 à 40 %' : '10 à 25 %'); }
+  if (mer) { const pano = has(/panoramique|pieds dans l'eau|front de mer|face (?:a la )?mer|vue imprenable|premiere ligne/); add('mer', pano ? 'Vue mer dégagée ou front de mer (annonce)' : 'Vue mer (annonce)', pano ? 20 : 10, pano ? '15 à 30 %' : '8 à 20 %'); }
   const MOTS = {un: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10};
   const numOf = s => s == null ? null : (MOTS[s] != null ? MOTS[s] : (parseInt(s, 10) || null));
   if (type === 'A') {
     let et = A.etage, nv = A.niveaux; const asc = A.ascenseur != null ? A.ascenseur : (has(/avec ascenseur|ascenseur/) && !has(/sans ascenseur/) ? true : has(/sans ascenseur/) ? false : null);
     if (et == null) { const m = /(\d{1,2})\s?(?:e|er|eme|ème)\s+(?:et dernier )?etage/.exec(t) || /(premier|deuxieme|troisieme|quatrieme|cinquieme|sixieme|septieme|huitieme)\s+(?:et dernier )?etage/.exec(t); if (m) et = numOf(m[1]) || ({premier: 1, deuxieme: 2, troisieme: 3, quatrieme: 4, cinquieme: 5, sixieme: 6, septieme: 7, huitieme: 8})[m[1]] || null; else if (has(/rez[- ]de[- ]chaussee|\brdc\b/)) et = 0; }
     if (nv == null) { const m = /(?:immeuble|residence|batiment) (?:recent |neuf |de standing |d'architecte )?(?:des annees \d{2,4} )?de (\d{1,2}|deux|trois|quatre|cinq|six|sept|huit|neuf|dix) etages/.exec(t); if (m) nv = numOf(m[1]); }
-    if (has(/dernier etage|attique|toit[- ]terrasse/) || (et != null && nv && et >= nv && et >= 2)) add('etage', 'Dernier étage', 8, '5 à 12 %');
-    else if (et != null && et >= 3 && asc !== false) add('etage', `Étage élevé (${et}e)${asc ? ' avec ascenseur' : ''}`, 5, '3 à 8 %');
+    if (has(/dernier etage|attique|toit[- ]terrasse/) || (et != null && nv && et >= nv && et >= 2)) add('etage', 'Dernier étage', 6, '4 à 10 %');
+    else if (et != null && et >= 3 && asc !== false) add('etage', `Étage élevé (${et}e)${asc ? ' avec ascenseur' : ''}`, 3, '2 à 6 %');
     else if (et != null && et >= 3 && asc === false) add('etage', `${et}e étage sans ascenseur`, -8, '−12 à −5 %');
     else if (et === 0 && !has(/rez[- ]de[- ]jardin/)) add('etage', 'Rez-de-chaussée', -6, '−10 à −3 %');
     if (has(/rez[- ]de[- ]jardin|jardin privatif/)) add('jardin', 'Jardin privatif ou rez-de-jardin', 4, '2 à 8 %');
   }
-  if (A.terrasse >= 30 || has(/grande terrasse|vaste terrasse|terrasse de \d{2,} ?m/)) add('terrasse', 'Grande terrasse', 10, '6 à 15 %');
-  else if (A.terrasse > 0 || has(/terrasse/)) add('terrasse', has(/deux terrasses|2 terrasses|terrasses/) ? 'Terrasses' : 'Terrasse', 7, '5 à 12 %');
+  if (A.terrasse >= 30 || has(/grande terrasse|vaste terrasse|terrasse de \d{2,} ?m/)) add('terrasse', 'Grande terrasse', 8, '5 à 12 %');
+  else if (A.terrasse > 0 || has(/terrasse/)) add('terrasse', has(/deux terrasses|2 terrasses|terrasses/) ? 'Terrasses' : 'Terrasse', 5, '3 à 10 %');
   else if (has(/balcon/)) add('terrasse', 'Balcon', 2, '1 à 4 %');
-  if (A.piscine || has(/piscine/)) add('piscine', type === 'A' ? 'Piscine dans la résidence' : 'Piscine', type === 'A' ? 4 : 6, type === 'A' ? '3 à 6 %' : '4 à 8 %');
+  if (A.piscine || has(/piscine/)) add('piscine', type === 'A' ? 'Piscine dans la résidence' : 'Piscine', type === 'A' ? 3 : 5, type === 'A' ? '2 à 5 %' : '3 à 8 %');
   if (A.travaux || has(/travaux a prevoir|a rafraichir|a renover|a restaurer|a remettre au gout du jour|gros travaux/)) add('etat', 'Travaux à prévoir (annonce)', -10, '−15 à −5 %');
-  else if (has(/refait a neuf|entierement renove|renove|excellent etat|tres bon etat|impeccable|aucun travaux|sans travaux|parfait etat/)) add('etat', 'Très bon état annoncé', 5, '3 à 8 %');
-  if (has(/prestige|standing|haut de gamme|luxe|luxueu|residence securisee|gardien|concierge/)) add('standing', 'Résidence de standing (annonce)', 5, '3 à 8 %');
-  if (has(/garage|box ferme|\bbox\b/) || A.garages) add('garage', 'Garage ou box', 0, '25 000 à 40 000 €', 30000);
-  else if (has(/parking|stationnement|place de voiture/) || A.parkings) add('garage', 'Place de parking', 0, '10 000 à 20 000 €', 15000);
-  if (has(/\bcave\b/)) add('cave', 'Cave', 0, '2 000 à 5 000 €', 3000);
+  else if (has(/refait a neuf|entierement renove|renove|excellent etat|tres bon etat|impeccable|aucun travaux|sans travaux|parfait etat/)) add('etat', 'Très bon état annoncé', 4, '3 à 8 %');
+  if (has(/prestige|standing|haut de gamme|luxe|luxueu|residence securisee|gardien|concierge/)) add('standing', 'Résidence de standing (annonce)', 4, '3 à 8 %');
+  if (has(/garage|box ferme|\bbox\b/) || A.garages) add('garage', 'Garage ou box', 0, '20 000 à 40 000 €', 25000);
+  else if (has(/parking|stationnement|place de voiture/) || A.parkings) add('garage', 'Place de parking', 0, '8 000 à 20 000 €', 12000);
+  if (has(/\bcave\b/)) add('cave', 'Cave', 0, '1 500 à 5 000 €', 2000);
   if (type === 'A' && has(/sans ascenseur/) && !out.some(a => a.k === 'etage')) add('etage', 'Sans ascenseur', -5, '−10 à −3 %');
   if (has(/expose nord|exposition nord|oriente nord|plein nord/)) add('expo', 'Exposition nord', -3, '−6 à −2 %');
   if (has(/bruyant|route passante|nuisances|voie rapide|voie ferree/)) add('bruit', 'Nuisances signalées', -5, '−10 à −3 %');
@@ -121,7 +121,10 @@ VA.estimer = function (P, adj) {
     .concat(adjArr.filter(a => !a.k).map(a => ({k: null, l: a.l, p: +a.p || 0, e: +a.e || 0, on: a.on !== false, auto: false})));
   const onItems = items.filter(a => a.on);
   // les atouts annoncés se cumulent jusqu'à +30 % (ils se recoupent : vue, standing, piscine vont ensemble) ; ce que le conseiller a vu s'ajoute, ±25 %
-  const totAuto = clamp(onItems.filter(a => a.auto).reduce((s, a) => s + (+a.p || 0), 0), -35, 30), totMan = clamp(onItems.filter(a => !a.auto).reduce((s, a) => s + (+a.p || 0), 0), -25, 25);
+  // plafond des atouts : les meilleures ventes récentes du quartier (9e décile à 350 m, 3 ans) ; un bien ne vaut pas plus que ce que le quartier a déjà payé
+  const near90 = (() => { const v = all.filter(r => r.km <= 350 && ageY(r.d) <= 3).map(r => r.pm2r).sort((a, b) => a - b); return v.length >= 20 ? pctl(v, 0.9) : null; })();
+  const capAuto = near90 && m5 ? clamp(Math.round((near90 / m5 - 1) * 100), 0, 30) : 25;
+  const totAuto = clamp(onItems.filter(a => a.auto).reduce((s, a) => s + (+a.p || 0), 0), -35, capAuto), totMan = clamp(onItems.filter(a => !a.auto).reduce((s, a) => s + (+a.p || 0), 0), -25, 25);
   const tot = clamp(totAuto + totMan, -35, 60); const totE = onItems.reduce((s, a) => s + (+a.e || 0), 0);
   const valeurAj = valeur ? Math.round((valeur * (1 + tot / 100) + totE) / 1000) * 1000 : null;
   // quartier à deux vitesses : à 350 m et 3 ans, le 9e décile des €/m² dépasse de 35 % la médiane (front de mer, résidences de standing)
@@ -135,7 +138,7 @@ VA.estimer = function (P, adj) {
   const ecart8 = (A.prix && m8) ? A.prix / (m8 * S) - 1 : null;
   const lib = e => e == null ? {t: 'Pas assez de ventes', c: 'muted'} : e <= -0.08 ? {t: 'Sous le marché', c: 'ok'} : e <= 0.05 ? {t: 'Dans le marché', c: 'acc'} : e <= 0.12 ? {t: 'Un peu au-dessus', c: 'warn'} : {t: 'Au-dessus du marché', c: 'bad'};
   return {type, S, T, lastYear, ref, fac, slope, all, cands, ecartes, top5, top8, m5, m8, valeur, valeurAj, lo, hi, fourchette: valeur ? [Math.round(valeur * lo / 1000) * 1000, Math.round(valeur * hi / 1000) * 1000] : null,
-    cv, fiab, tot, totE, totAuto, totMan, items, atouts: items.filter(a => a.auto), nRes, situe, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
+    cv, fiab, tot, totE, totAuto, totMan, capAuto, near90, items, atouts: items.filter(a => a.auto), nRes, situe, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
 };
 
 /* ---------- géométrie ---------- */
