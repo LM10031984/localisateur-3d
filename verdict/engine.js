@@ -81,12 +81,19 @@ const area = p => { let a = 0; for (let i = 0; i < p.length; i++) { const [x1, y
 const inPoly = ([x, y], p) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const [xi, yi] = p[i], [xj, yj] = p[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
 VA.geo = {closed, area, inPoly};
 VA.sujet = function (P) {
-  const B = P.carte && P.carte.bati || []; if (!B.length) return null;
-  const pt = [0, 0];
-  let b = B.find(x => x.g.some(r => inPoly(pt, closed(r))));
-  if (!b) { let best = null, bd = 1e9; B.forEach(x => { const d = Math.hypot(x.c[0], x.c[1]); if (d < bd) { bd = d; best = x; } }); if (bd <= 40) b = best; }
-  return b || null;
+  if (P._sujet !== undefined) return P._sujet;
+  const B = P.carte && P.carte.bati || []; if (!B.length) return (P._sujet = null);
+  const A = P.annonce || {}; const S = A.surface || null; const pt = [0, 0];
+  // candidats : bâtiments à moins de 45 m du point (ou le contenant) ; on écarte les abris (< 2,8 m) et on préfère les logements et la surface qui colle
+  const distTo = b => { let dmin = Math.hypot(b.c[0], b.c[1]); b.g.forEach(r => { const rr = closed(r); if (inPoly(pt, rr)) dmin = 0; rr.forEach(p => { dmin = Math.min(dmin, Math.hypot(p[0], p[1])); }); }); return dmin; };
+  const cands = B.map(b => ({b, d: distTo(b)})).filter(x => x.d <= 45);
+  if (!cands.length) return (P._sujet = null);
+  const scored = cands.map(x => { const b = x.b; const emp = Math.abs(area(closed(b.g[0]))); const niv = b.et || (b.h ? Math.max(1, Math.round(b.h / 3)) : 1); const shab = emp * niv;
+    let s = x.d / 45; if (!b.h || b.h < 2.8) s += 2; if (emp < 25) s += 1.5; if (b.u && /r[ée]sidentiel/i.test(b.u)) s -= 0.4; if (b.nl > 0) s -= 0.3; if (b.u && /annexe|agricole|industriel|commercial/i.test(b.u)) s += 1; if (S && shab > 20) s += Math.min(2, Math.abs(Math.log(shab / S)) * 0.8);
+    return {b, s}; }).sort((a, b) => a.s - b.s);
+  return (P._sujet = scored[0].b);
 };
+VA.parcelleDe = function (P, b) { if (!b) return null; const c = b.c; return (P.carte.parcels || []).find(p => p.g.some(r => inPoly(c, closed(r)))) || null; };
 VA.orientation = function (b) {
   if (!b) return null; const r = closed(b.g[0]); let best = null;
   for (let i = 0; i < r.length; i++) { const a = r[i], c = r[(i + 1) % r.length]; const L = Math.hypot(c[0] - a[0], c[1] - a[1]); if (!best || L > best.L) best = {L, a, c}; }
@@ -156,7 +163,7 @@ VA.mapSvg = function (P, opts) {
   const poly = r => r.map(p => px(p).map(v => v.toFixed(1)).join(',')).join(' ');
   const g = [];
   const parcels = P.carte.parcels || [], bati = P.carte.bati || [];
-  const pid = P.parcelle && P.parcelle.id;
+  const bS0 = VA.sujet(P); const pb = VA.parcelleDe(P, bS0); const pid = (pb && pb.id) || (P.parcelle && P.parcelle.id);
   g.push('<g id="gParc">' + parcels.map(p => p.g.map(r => `<polygon points="${poly(r)}" fill="${p.id === pid ? 'rgba(232,100,27,.10)' : 'none'}" stroke="${p.id === pid ? '#E8641B' : '#cfd1ca'}" stroke-width="${p.id === pid ? 1.8 : .8}"><title>Parcelle ${esc(p.sec)} ${esc(String(p.num).replace(/^0+/, ''))} · ${fmt(p.m2)} m²</title></polygon>`).join('')).join('') + '</g>');
   g.push('<g id="gSun"></g>');
   const bS = VA.sujet(P);
