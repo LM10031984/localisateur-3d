@@ -41,8 +41,12 @@ VA.atouts = function (P) {
   const has = re => re.test(t); const out = []; const add = (k, l, p, plage, e) => out.push({k, l, p, plage, e: e || 0, auto: true});
   const mer = A.vueMer || has(/vue (?:mer|sur la mer|sur mer|panoramique)|donne sur la mer|face (?:a la )?mer|front de mer|pieds dans l'eau|vue imprenable|vue degagee sur la mer|vue baie/);
   if (mer) { const pano = has(/panoramique|pieds dans l'eau|front de mer|face (?:a la )?mer|vue imprenable|premiere ligne/); add('mer', pano ? 'Vue mer dégagée ou front de mer (annonce)' : 'Vue mer (annonce)', pano ? 25 : 15, pano ? '15 à 40 %' : '10 à 25 %'); }
+  const MOTS = {un: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10};
+  const numOf = s => s == null ? null : (MOTS[s] != null ? MOTS[s] : (parseInt(s, 10) || null));
   if (type === 'A') {
-    const et = A.etage, nv = A.niveaux, asc = A.ascenseur;
+    let et = A.etage, nv = A.niveaux; const asc = A.ascenseur != null ? A.ascenseur : (has(/avec ascenseur|ascenseur/) && !has(/sans ascenseur/) ? true : has(/sans ascenseur/) ? false : null);
+    if (et == null) { const m = /(\d{1,2})\s?(?:e|er|eme|ème)\s+(?:et dernier )?etage/.exec(t) || /(premier|deuxieme|troisieme|quatrieme|cinquieme|sixieme|septieme|huitieme)\s+(?:et dernier )?etage/.exec(t); if (m) et = numOf(m[1]) || ({premier: 1, deuxieme: 2, troisieme: 3, quatrieme: 4, cinquieme: 5, sixieme: 6, septieme: 7, huitieme: 8})[m[1]] || null; else if (has(/rez[- ]de[- ]chaussee|\brdc\b/)) et = 0; }
+    if (nv == null) { const m = /(?:immeuble|residence|batiment) (?:recent |neuf |de standing |d'architecte )?(?:des annees \d{2,4} )?de (\d{1,2}|deux|trois|quatre|cinq|six|sept|huit|neuf|dix) etages/.exec(t); if (m) nv = numOf(m[1]); }
     if (has(/dernier etage|attique|toit[- ]terrasse/) || (et != null && nv && et >= nv && et >= 2)) add('etage', 'Dernier étage', 8, '5 à 12 %');
     else if (et != null && et >= 3 && asc !== false) add('etage', `Étage élevé (${et}e)${asc ? ' avec ascenseur' : ''}`, 5, '3 à 8 %');
     else if (et != null && et >= 3 && asc === false) add('etage', `${et}e étage sans ascenseur`, -8, '−12 à −5 %');
@@ -84,8 +88,11 @@ VA.estimer = function (P, adj) {
   const pieces = A.pieces || null;
   const adjArr = adj || []; const excl = new Set(adjArr.filter(a => a.k && a.k.startsWith('x:') && a.on !== false).map(a => a.k.slice(2)));
   const keyOf = r => (r.pc || '') + '|' + r.d + '|' + r.pk; VA.saleKey = keyOf;
-  const mine = VA.copros(P).find(c => c.sujet); const resPt = (A.residence || P.centre && P.centre.source === 'conseiller') ? [0, 0] : (mine && (mine.x || mine.y) ? [mine.x, mine.y] : null);
-  all.forEach(r => { r.res = !!((P.parcelle && r.pc === P.parcelle.id) || (resPt && Math.hypot(r.x - resPt[0], r.y - resPt[1]) <= 70)); r.key = keyOf(r); });
+  // la parcelle et la résidence ne comptent que si l'on sait où est le bien (adresse retrouvée, résidence indiquée, Localisateur, dossier d'adresse)
+  const situe = !!(P.adresse && P.adresse.trouvee) || !!A.residence || (P.centre && (P.centre.source === 'conseiller' || P.centre.source === 'localisateur' || P.centre.source === 'ban')) || A.mode === 'adresse';
+  const mine = situe ? VA.copros(P).find(c => c.sujet) : null; const resPt = (A.residence || P.centre && P.centre.source === 'conseiller') ? [0, 0] : (mine && (mine.x || mine.y) ? [mine.x, mine.y] : null);
+  all.forEach(r => { r.res = situe && !!((P.parcelle && r.pc === P.parcelle.id) || (resPt && Math.hypot(r.x - resPt[0], r.y - resPt[1]) <= 70)); r.key = keyOf(r); });
+  VA.situe = situe;
   const cands = all.filter(r => r.s / S >= 0.55 && r.s / S <= 1.8 && !excl.has(r.key)).map(r => {
     let score = Math.abs(Math.log(r.s / S)) * 3 + r.km / 300 + ageY(r.d) * 0.6;
     if (r.res) score -= 1.2; // les ventes de la résidence ou de la parcelle d'abord (même règle que Mon secteur)
@@ -106,11 +113,16 @@ VA.estimer = function (P, adj) {
   const cv = top5.length > 1 ? Math.sqrt(top5.reduce((a, c) => a + (c.pm2r - mean) ** 2, 0) / top5.length) / mean : null;
   const fiab = (top5.length === 5 && cv != null && cv < 0.15 && top5[4].score < 2.4) ? 'bonne' : (top5.length >= 4 && cv != null && cv < 0.28) ? 'moyenne' : 'faible';
   // atouts annoncés (automatiques, corrigeables) + ajustements du conseiller ; exclusions à part
+  const nRes = top5.filter(c => c.res).length;
   const autoA = VA.atouts(P); const byK = {}; adjArr.forEach(a => { if (a.k) byK[a.k] = a; });
-  const items = autoA.map(a => { const o = byK[a.k]; return Object.assign({}, a, o ? {on: o.on !== false, p: o.p != null ? +o.p : a.p, e: o.e != null ? +o.e : a.e} : {on: true}); })
+  // quand les comparables viennent de la résidence elle-même, ses atouts collectifs (piscine, standing, vue) sont déjà dans leurs prix
+  const dejaRes = nRes >= 3 ? ['piscine', 'standing', 'mer', 'terrasse', 'garage', 'cave'] : []; // dans une résidence, terrasses et garages se vendent avec : ils sont déjà dans les prix
+  const items = autoA.map(a => { const o = byK[a.k]; const deja = dejaRes.includes(a.k); return Object.assign({}, a, {deja}, o ? {on: o.on !== false, p: o.p != null ? +o.p : a.p, e: o.e != null ? +o.e : a.e} : {on: !deja}); })
     .concat(adjArr.filter(a => !a.k).map(a => ({k: null, l: a.l, p: +a.p || 0, e: +a.e || 0, on: a.on !== false, auto: false})));
   const onItems = items.filter(a => a.on);
-  const tot = clamp(onItems.reduce((s, a) => s + (+a.p || 0), 0), -35, 60); const totE = onItems.reduce((s, a) => s + (+a.e || 0), 0);
+  // les atouts annoncés se cumulent jusqu'à +30 % (ils se recoupent : vue, standing, piscine vont ensemble) ; ce que le conseiller a vu s'ajoute, ±25 %
+  const totAuto = clamp(onItems.filter(a => a.auto).reduce((s, a) => s + (+a.p || 0), 0), -35, 30), totMan = clamp(onItems.filter(a => !a.auto).reduce((s, a) => s + (+a.p || 0), 0), -25, 25);
+  const tot = clamp(totAuto + totMan, -35, 60); const totE = onItems.reduce((s, a) => s + (+a.e || 0), 0);
   const valeurAj = valeur ? Math.round((valeur * (1 + tot / 100) + totE) / 1000) * 1000 : null;
   // quartier à deux vitesses : à 350 m et 3 ans, le 9e décile des €/m² dépasse de 35 % la médiane (front de mer, résidences de standing)
   let deuxMarches = null; { const near = all.filter(r => r.km <= 350 && ageY(r.d) <= 3).map(r => r.pm2r).sort((a, b) => a - b); if (near.length >= 30) { const m = med(near), p90 = pctl(near, 0.9), p25 = pctl(near, 0.25); if (p90 / m >= 1.35) {
@@ -123,7 +135,7 @@ VA.estimer = function (P, adj) {
   const ecart8 = (A.prix && m8) ? A.prix / (m8 * S) - 1 : null;
   const lib = e => e == null ? {t: 'Pas assez de ventes', c: 'muted'} : e <= -0.08 ? {t: 'Sous le marché', c: 'ok'} : e <= 0.05 ? {t: 'Dans le marché', c: 'acc'} : e <= 0.12 ? {t: 'Un peu au-dessus', c: 'warn'} : {t: 'Au-dessus du marché', c: 'bad'};
   return {type, S, T, lastYear, ref, fac, slope, all, cands, ecartes, top5, top8, m5, m8, valeur, valeurAj, lo, hi, fourchette: valeur ? [Math.round(valeur * lo / 1000) * 1000, Math.round(valeur * hi / 1000) * 1000] : null,
-    cv, fiab, tot, totE, items, atouts: items.filter(a => a.auto), nRes: top5.filter(c => c.res).length, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
+    cv, fiab, tot, totE, totAuto, totMan, items, atouts: items.filter(a => a.auto), nRes, situe, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
 };
 
 /* ---------- géométrie ---------- */
