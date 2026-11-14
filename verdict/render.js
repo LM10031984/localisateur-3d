@@ -25,9 +25,12 @@ function secHero(P, est, ctx) {
   if (A.exclusif) chips.push('<span class="chip acc">Exclusivité</span>');
   if (A.baisse) chips.push('<span class="chip warn">Prix déjà baissé (portail)</span>');
   if (A.neuf) chips.push('<span class="chip">Neuf</span>');
-  if (A.agence) chips.push(`<span class="chip">${esc(A.agence)}</span>`);
+  if (A.particulier) chips.push('<span class="chip acc">Annonce de particulier</span>'); else if (A.agence) chips.push(`<span class="chip">${esc(A.agence)}</span>`);
+  if (A.lecteur === 'favori') chips.push('<span class="chip">lue par le favori</span>');
+  if (A.copro && A.copro.procedure) chips.push('<span class="chip warn">Copropriété en procédure (annonce)</span>');
   if (S.length > 1) { const first = S[0], last = S[S.length - 1]; if (last.prix < first.prix) chips.push(`<span class="chip warn">−${fr1((1 - last.prix / first.prix) * 100)} % depuis le ${dateFr(first.date)}</span>`); }
-  const adrLine = adr && adr.trouvee ? `<div class="row" style="gap:8px"><span class="chip ${adr.certitude === 'élevée' ? 'ok' : adr.certitude === 'moyenne' ? 'acc' : 'warn'}">Adresse retrouvée · certitude ${adr.certitude}</span><b class="num-adr" style="font-size:16px">${esc(niceAdr(adr.dpe.adr))}</b></div>`
+  const lab27 = x => x && x.lab && !x.lab.q && x.lab.nxt && x.lab.nxt !== x.l ? `<span class="chip ${x.lab.nxt < x.l ? 'ok' : 'warn'}" title="Étiquette recalculée avec l’électricité à 1,7 (arrêté du 19 août 2026) ; seule l’attestation ADEME fait foi">au 1er janv. 2027 : ${x.l} → ${x.lab.nxt}</span>` : '';
+  const adrLine = adr && adr.trouvee ? `<div class="row" style="gap:8px"><span class="chip ${adr.certitude === 'élevée' ? 'ok' : adr.certitude === 'moyenne' ? 'acc' : 'warn'}">Adresse retrouvée · certitude ${adr.certitude}</span><b class="num-adr" style="font-size:16px">${esc(niceAdr(adr.dpe.adr))}</b>${lab27(adr.dpe)}<a class="small noprint" href="${VA.ademe(adr.dpe.id)}" target="_blank" rel="noopener">fiche ADEME ↗</a></div>`
     : A.mode === 'adresse' ? `<div class="row"><span class="chip acc">Dossier d’adresse</span><b style="font-size:16px">${esc(P.centre.label || A.q)}</b></div>`
     : `<div class="row"><span class="chip">Adresse non retrouvée</span><span class="muted">${A.quartier ? esc(A.quartier) + ' · ' : ''}${esc(A.cp || '')} ${esc(A.ville || '')} · dossier au niveau du quartier${P.adresse && P.adresse.candidats && P.adresse.candidats.length ? ' · ' + P.adresse.candidats.length + ' DPE candidats' : ''}</span></div>`;
   const self = P.self || {}; const lastSale = self.ventes && self.ventes[0]; const selfDpe = self.dpe && self.dpe[0];
@@ -36,7 +39,7 @@ function secHero(P, est, ctx) {
       <div class="tile acc"><span class="k">Valeur indicative</span><span class="v">${eur(est.valeur)}</span><span class="s mono">${est.type === 'M' ? 'maison' : 'appartement'} de ${fmt(est.S)} m² au DPE · ${m2(est.m5)}</span></div>
       <div class="tile"><span class="k">8 cas sur 10</span><span class="v">${kE(est.fourchette[0])} – ${kE(est.fourchette[1])}</span><span class="s">fiabilité ${est.fiab} · ${est.n} ventes du type à 800 m</span></div>
       <div class="tile"><span class="k">Dernière vente de l’adresse</span><span class="v">${lastSale ? kE(lastSale.p) : '–'}</span><span class="s">${lastSale ? monthFr(lastSale.d) + ' · ' + (lastSale.t === 'M' ? 'maison' : 'appt') + ' ' + fmt(lastSale.s) + ' m² · ' + m2(lastSale.p / lastSale.s) : 'aucune depuis ' + (P.marche && P.marche.years[0])}</span></div>
-      <div class="tile"><span class="k">DPE de l’adresse</span><span class="v">${selfDpe ? selfDpe.l : '–'}</span><span class="s">${selfDpe ? dateFr(selfDpe.date) + ' · ' + fr1(selfDpe.kwh) + ' kWh · ' + fmt(selfDpe.surface) + ' m²' + (self.dpe.length > 1 ? ' · ' + self.dpe.length + ' DPE à l’adresse' : '') : 'aucun DPE trouvé à l’adresse'}</span></div>
+      <div class="tile"><span class="k">DPE de l’adresse</span><span class="v">${selfDpe ? selfDpe.l : '–'}</span><span class="s">${selfDpe ? dateFr(selfDpe.date) + ' · ' + fr1(selfDpe.kwh) + ' kWh · ' + fmt(selfDpe.surface) + ' m²' + (selfDpe.lab && !selfDpe.lab.q && selfDpe.lab.nxt && selfDpe.lab.nxt !== selfDpe.l ? ' · <b>' + selfDpe.l + ' → ' + selfDpe.lab.nxt + ' au 1er janv. 2027</b>' : '') + (self.dpe.length > 1 ? ' · ' + self.dpe.length + ' DPE à l’adresse' : '') : 'aucun DPE trouvé à l’adresse'}</span></div>
     </div>` : est && est.valeur ? `
     <div class="tiles">
       <div class="tile"><span class="k">Prix affiché</span><span class="v">${eur(A.prix)}</span><span class="s mono">${m2(A.prix / A.surface)}${A.pieces ? ' · ' + A.pieces + ' pièces' : ''}</span></div>
@@ -46,7 +49,7 @@ function secHero(P, est, ctx) {
     </div>` : A.mode === 'adresse' ? `
     <div class="tiles">
       <div class="tile"><span class="k">Dernière vente de l’adresse</span><span class="v">${lastSale ? kE(lastSale.p) : '–'}</span><span class="s">${lastSale ? monthFr(lastSale.d) + ' · ' + (lastSale.t === 'M' ? 'maison' : 'appt') + ' ' + fmt(lastSale.s) + ' m² · ' + m2(lastSale.p / lastSale.s) : 'aucune depuis ' + (P.marche && P.marche.years[0])}</span></div>
-      <div class="tile"><span class="k">DPE de l’adresse</span><span class="v">${selfDpe ? selfDpe.l : '–'}</span><span class="s">${selfDpe ? dateFr(selfDpe.date) + ' · ' + fr1(selfDpe.kwh) + ' kWh · ' + fmt(selfDpe.surface) + ' m²' + (self.dpe.length > 1 ? ' · ' + self.dpe.length + ' DPE à l’adresse' : '') : 'aucun DPE trouvé à l’adresse'}</span></div>
+      <div class="tile"><span class="k">DPE de l’adresse</span><span class="v">${selfDpe ? selfDpe.l : '–'}</span><span class="s">${selfDpe ? dateFr(selfDpe.date) + ' · ' + fr1(selfDpe.kwh) + ' kWh · ' + fmt(selfDpe.surface) + ' m²' + (selfDpe.lab && !selfDpe.lab.q && selfDpe.lab.nxt && selfDpe.lab.nxt !== selfDpe.l ? ' · <b>' + selfDpe.l + ' → ' + selfDpe.lab.nxt + ' au 1er janv. 2027</b>' : '') + (self.dpe.length > 1 ? ' · ' + self.dpe.length + ' DPE à l’adresse' : '') : 'aucun DPE trouvé à l’adresse'}</span></div>
       <div class="tile"><span class="k">Médiane appartements</span><span class="v">${P.marche && P.marche.allMed.A ? m2(P.marche.allMed.A) : '–'}</span><span class="s">${fmt(P.marche && P.marche.n800)} ventes à 800 m depuis ${P.marche && P.marche.years[0]}</span></div>
       <div class="tile"><span class="k">Médiane maisons</span><span class="v">${P.marche && P.marche.allMed.M ? m2(P.marche.allMed.M) : '–'}</span><span class="s">${P.dpe ? (P.dpe.DC.E + P.dpe.DC.F + P.dpe.DC.G) + ' passoires E-F-G sur ' + P.dpe.nDpe + ' DPE à 300 m' : ''}</span></div>
     </div>` : `
@@ -70,6 +73,7 @@ function secHero(P, est, ctx) {
           ${A.src ? `<a class="btn btn-s" href="${esc(A.src)}" target="_blank" rel="noopener">Voir l’annonce</a>` : ''}
           ${A.src && !ctx.standalone ? `<button class="btn-s pro" data-act="refresh">Mettre à jour le prix</button>` : ''}
           ${!ctx.standalone ? `<a class="btn btn-s pro" href="#rdv/${esc(ctx.id || '')}">Préparer le rendez-vous →</a><a class="btn btn-s pro" href="#pm/${esc(ctx.id || '')}">Point marché propriétaire</a>` : ''}
+          ${!ctx.standalone && (adr && adr.trouvee || A.mode === 'adresse') ? `<a class="btn btn-s pro" href="${VA.monSecteur(adr && adr.trouvee ? adr.dpe.adr : (P.centre.label || A.q))}" target="_blank" rel="noopener" title="Le secteur autour de cette adresse : prospection, flyers, QR (compte Mon secteur)">Ouvrir dans Mon secteur ↗</a>` : ''}
         </div>
       </div>
       <div class="card" style="display:flex;flex-direction:column;gap:8px">
@@ -275,19 +279,99 @@ function secProspecter(P, est, ctx) {
   const efg = D.filter(d => 'EFG'.includes(d.l) && d.date < since);
   const elec = efg.filter(d => d.en === 'E' && d.date < '2026-01-01');
   const coproFin = C.filter(c => c.fin && (new Date(c.fin).getTime() - Date.now()) < 365 * 864e5 && c.lotsH >= 5);
+  const gain27 = D.filter(d => d.nxt && d.l && !d.q && d.nxt < d.l).sort((a, b) => (b.l > a.l ? 1 : -1) || a.date.localeCompare(b.date));
   const row = d => `<tr><td class="mono">${dateFr(d.date)}</td><td class="num-adr">${esc(niceAdr(d.adr))}${d.res || d.comp ? '<br><span class="small muted">' + esc([d.res, d.comp].filter(Boolean).join(' · ')) + '</span>' : ''}</td><td>${d.t === 'm' ? 'maison' : d.t === 'i' ? 'immeuble (DPE collectif)' : 'appt'}${d.et >= 0 ? ' · ét. ' + d.et : ''}</td><td class="r mono">${d.s ? d.s + ' m²' : '–'}</td><td>${dpeClass(d.l)}</td><td>${esc(energieLib(d.en))}</td><td class="r mono">${d.cout ? eur(d.cout) : '–'}</td><td class="r mono">${Math.round(Math.hypot(d.x, d.y))} m</td></tr>`;
   const head = '<thead><tr><th>DPE</th><th>Adresse</th><th>Type</th><th class="r">Surface</th><th>Classe</th><th>Énergie</th><th class="r">Facture</th><th class="r">Dist.</th></tr></thead>';
   return `<section id="prospecter" class="sec pro"><div class="sec-h"><span class="n">09</span><h2>Prospecter autour</h2><p>Des adresses, jamais des noms : pour le courrier, le passage et le flyer. Un DPE récent est un signal de projet (vente ou location), pas une certitude.</p></div>
     <div class="grid g4" style="margin-bottom:14px">
       <div class="tile"><span class="k">DPE des 6 derniers mois</span><span class="v">${recents.length}</span><span class="s">à 300 m, depuis le ${dateFr(since)}</span></div>
       <div class="tile"><span class="k">DPE 1–12 mois après une vente</span><span class="v">${apresVente.length}</span><span class="s">mise en location probable</span></div>
-      <div class="tile"><span class="k">Passoires E-F-G</span><span class="v">${efg.length}</span><span class="s">${elec.length} électriques d’avant 2026 : nouvelle étiquette à proposer</span></div>
+      <div class="tile"><span class="k">Passoires E-F-G</span><span class="v">${efg.length}</span><span class="s">${gain27.length} logements gagnent une lettre au 1er janvier 2027</span></div>
       <div class="tile"><span class="k">Copros en fin de mandat</span><span class="v">${coproFin.length}</span><span class="s">assemblée dans l’année, ≥ 5 lots</span></div>
     </div>
+    ${gain27.length ? `<div class="card" style="margin-bottom:14px"><h3>Nouvelle étiquette au 1er janvier 2027</h3><p class="note">Électricité comptée à 1,7 au lieu de 1,9 (arrêté du 19 août 2026) : ces logements gagnent au moins une lettre. Le 2 janvier, vous êtes le premier à l’annoncer, avec l’attestation officielle de l’ADEME, la seule qui fait foi. Une bonne nouvelle à apporter, pas une estimation à proposer.</p><div class="tbl"><table><thead><tr><th>DPE</th><th>Adresse</th><th>Type</th><th class="r">Surface</th><th>Aujourd’hui</th><th>2027</th><th>Attestation</th></tr></thead><tbody>${gain27.slice(0, 25).map(d => `<tr><td class="mono">${dateFr(d.date)}</td><td class="num-adr">${esc(niceAdr(d.adr))}${d.res || d.comp ? '<br><span class="small muted">' + esc([d.res, d.comp].filter(Boolean).join(' · ')) + '</span>' : ''}</td><td>${d.t === 'm' ? 'maison' : d.t === 'i' ? 'immeuble' : 'appt'}${d.et >= 0 ? ' · ét. ' + d.et : ''}</td><td class="r mono">${d.s ? d.s + ' m²' : '–'}</td><td>${dpeClass(d.l)}</td><td>${dpeClass(d.nxt)}</td><td><a class="small" href="${VA.ademe(d.id)}" target="_blank" rel="noopener">ADEME ↗</a></td></tr>`).join('')}</tbody></table></div>${gain27.length > 25 ? `<p class="note">… et ${gain27.length - 25} autres.</p>` : ''}</div>` : ''}
     ${recents.length ? `<div class="card"><h3>DPE récents</h3><div class="tbl"><table>${head}<tbody>${recents.slice(0, 25).map(row).join('')}</tbody></table></div>${recents.length > 25 ? `<p class="note">… et ${recents.length - 25} autres.</p>` : ''}</div>` : ''}
     ${apresVente.length ? `<div class="card" style="margin-top:14px"><h3>DPE après une vente récente (achat pour louer ?)</h3><div class="tbl"><table><thead><tr><th>Vente</th><th>Adresse</th><th class="r">Prix</th><th>DPE</th><th>Classe</th><th>Délai</th></tr></thead><tbody>${apresVente.slice(0, 15).map(x => `<tr><td class="mono">${monthFr(x.v.d)}</td><td class="num-adr">${esc(niceAdr(x.d.adr))}</td><td class="r mono">${kE(x.v.pk * 1000)}</td><td class="mono">${dateFr(x.d.date)}</td><td>${dpeClass(x.d.l)}</td><td class="mono">${x.m} mois</td></tr>`).join('')}</tbody></table></div></div>` : ''}
     ${efg.length ? `<div class="card" style="margin-top:14px"><h3>Passoires énergétiques (E, F, G)</h3><div class="tbl"><table>${head}<tbody>${efg.slice(0, 25).map(row).join('')}</tbody></table></div>${efg.length > 25 ? `<p class="note">… et ${efg.length - 25} autres.</p>` : ''}</div>` : ''}
   </section>`;
+}
+
+/* ---------- Avant le mandat : ce que l'acheteur et son notaire vont découvrir (vue conseiller) ---------- */
+function secMandat(P, est, ctx) {
+  const A = P.annonce; const R = P.risques || {}; const d = P.adresse && P.adresse.dpe; const self = P.self || {}; const sd = self.dpe && self.dpe[0];
+  const C = VA.copros(P); const mine = C.find(c => c.sujet); const type = VA.typeBien(P);
+  const cl = (d && d.l) || (sd && sd.l) || (A.dpe && A.dpe.l) || null; const kwh = d ? d.kwh : sd ? sd.kwh : (A.dpe && A.dpe.kwh);
+  const annee = A.annee || (d && d.annee) || (sd && sd.annee) || null; const an = annee ? +String(annee).slice(0, 4) : null;
+  const lab = (d && d.lab) || (sd && sd.lab) || null; const copro = (A.copro && A.copro.is) || !!mine || (d && d.copro) || type === 'A';
+  const argile = (R.argile || '').toLowerCase(); const cat = R.catnat || {}; const today = new Date().toISOString().slice(0, 10);
+  const items = []; const add = (lvl, t, why) => items.push({lvl, t, why});
+  // énergie
+  if (cl === 'G') add('r', 'Logement G : interdit à la location depuis le 1er janvier 2025, audit énergétique obligatoire pour vendre', 'L’acheteur négociera les travaux ; l’audit (à la charge du vendeur) chiffre deux parcours de rénovation : commandez-le avec les diagnostics.');
+  else if (cl === 'F') add('r', 'Logement F : audit énergétique obligatoire pour vendre, interdit à la location au 1er janvier 2028', 'Un investisseur le sait : préparez le chiffrage des travaux avant la mise en vente.');
+  else if (cl === 'E') add('o', 'Logement E : audit énergétique obligatoire pour vendre depuis le 1er janvier 2025, interdit à la location au 1er janvier 2034', 'Vérifiez si le DPE date d’avant 2026 : la nouvelle méthode peut le faire passer en D (voir ci-dessous).');
+  if (lab && !lab.q && lab.nxt && cl && lab.nxt < cl) add('b', `Bonne nouvelle : au 1er janvier 2027, le DPE passe de ${cl} à ${lab.nxt} (électricité comptée à 1,7)`, 'Seule l’attestation de l’ADEME fait foi : téléchargez-la le 2 janvier, c’est un argument de vente et une raison de rappeler le propriétaire.');
+  if (d && d.date && d.date < '2021-07-01') add('o', 'DPE antérieur au 1er juillet 2021 : il n’est plus valable depuis le 1er janvier 2025', 'Un nouveau DPE est à commander avant toute annonce.');
+  else if (d && d.date && d.date < new Date(Date.now() - 10 * 365.25 * 864e5).toISOString().slice(0, 10)) add('o', 'DPE de plus de 10 ans : à refaire', '');
+  // prix
+  if (est && est.valeur && A.prix) { const e = est.ecart; if (e > 0.12) add('r', `Prix ${pct(e)} au-dessus des ventes comparables`, 'À ce niveau, les acheteurs informés ne visitent pas : le dossier donne les 5 ventes à montrer au vendeur.'); else if (e > 0.05) add('o', `Prix ${pct(e)} au-dessus des ventes comparables`, 'Marge de négociation visible : préparez la réponse « pourquoi ce prix ».'); }
+  // risques
+  if (argile.includes('fort')) add('o', 'Argile : exposition forte au retrait-gonflement', 'Fissures à regarder en visite ; étude de sol obligatoire pour vendre un terrain à bâtir ; l’ERP le mentionne.');
+  else if (argile.includes('moy')) add('b', 'Argile : exposition moyenne', 'Mention dans l’état des risques ; regardez les fissures en façade.');
+  if (R.tri) add('o', `Territoire à risque important d’inondation (${R.tri})`, 'Vérifiez le PPRi de la commune : il peut imposer des travaux ou limiter l’usage du rez-de-chaussée ; assurance et crédit s’en souviennent.');
+  if (R.radon == 3) add('b', 'Radon : potentiel de catégorie 3', 'Information obligatoire dans l’ERP ; une mesure rassure l’acheteur.');
+  if (R.seisme >= 4) add('b', `Sismicité ${R.seisme} (moyenne)`, 'Information de l’ERP ; pas de travaux imposés pour une vente.');
+  if (cat.n >= 10) add('b', `${cat.n} arrêtés de catastrophe naturelle sur la commune`, 'Le vendeur doit déclarer les sinistres indemnisés ; demandez-lui la liste.');
+  // urbanisme
+  if (R.plu && /^(N|A)/i.test(R.plu.z || '')) add('o', `Zone ${R.plu.z} du PLU : constructibilité très limitée`, 'Pas d’extension ni de piscine sans vérifier le règlement : ne promettez rien à l’acheteur.');
+  if (R.presc && R.presc.length) add('b', `Prescriptions au point : ${R.presc.slice(0, 3).join(' · ')}`, 'Servitudes ou protections à lire dans le règlement avant d’annoncer un potentiel.');
+  // copropriété
+  if (mine && !mine.mandat) add('o', 'Copropriété sans mandat de syndic en cours au registre', 'Sans syndic, pas de pré-état daté ni de PV d’AG à jour : le compromis attendra. Vérifiez auprès du conseil syndical.');
+  if (mine && mine.fin && mine.fin <= new Date(Date.now() + 120 * 864e5).toISOString().slice(0, 10)) add('b', `Mandat du syndic à échéance le ${dateFr(mine.fin)}`, 'Assemblée générale proche : les comptes et les travaux votés seront frais pour le dossier de vente.');
+  if (A.copro && A.copro.procedure) add('r', 'Copropriété en procédure (selon l’annonce)', 'Procédure ou administrateur judiciaire : à expliquer à l’acheteur dès la visite, le notaire le découvrira.');
+  if (copro && A.copro && A.copro.lots && mine && mine.lotsH && Math.abs(A.copro.lots - mine.lotsH) > Math.max(3, mine.lotsH * 0.3)) add('b', `Lots : ${A.copro.lots} annoncés, ${mine.lotsH} au registre`, 'Le registre est parfois en retard ; le pré-état daté tranchera.');
+  if (copro && !A.copro.charges && A.mode !== 'adresse') add('b', 'Charges de copropriété non indiquées', 'Montant annuel obligatoire dans l’annonce.');
+  // vente récente de l'adresse
+  const lastSale = self.ventes && self.ventes[0]; if (lastSale && lastSale.d >= new Date(Date.now() - 5 * 365.25 * 864e5).toISOString().slice(0, 10)) add('b', `Dernière vente de l’adresse en ${monthFr(lastSale.d)} (${kE(lastSale.p)})`, 'Revente rapide : si ce n’est pas la résidence principale, le vendeur a une plus-value à calculer avec son notaire.');
+  if (A.particulier) add('b', 'Annonce de particulier', 'Le vendeur découvre le marché : le dossier (ventes, DPE, risques) est votre entrée, pas l’estimation.');
+  if (P.adresse && P.adresse.trouvee && P.adresse.certitude !== 'élevée') add('b', `Adresse à confirmer (certitude ${P.adresse.certitude})`, 'Vérifiez la parcelle en 3D ou sur place avant d’écrire au propriétaire.');
+  const ordre = {r: 0, o: 1, b: 2}; items.sort((a, b) => ordre[a.lvl] - ordre[b.lvl]);
+  // diagnostics à commander
+  const diags = []; const dg = (n, q, why) => diags.push({n, q, why});
+  dg('DPE', d || sd ? (d && d.date >= '2021-07-01' || sd && sd.date >= '2021-07-01' ? 'valable' : 'à refaire') : 'à commander', 'Obligatoire dès l’annonce ; 10 ans de validité, les DPE d’avant juillet 2021 ne valent plus.');
+  if ('EFG'.includes(cl || '')) dg('Audit énergétique', 'obligatoire', 'Maisons et immeubles en monopropriété classés E, F ou G : remis à la première visite.');
+  dg('État des risques (ERP)', 'obligatoire', `Moins de 6 mois au compromis : argile ${esc(R.argile || '?')}, sismicité ${esc(R.seisme || '?')}, radon ${esc(R.radon || '?')}${R.tri ? ', TRI' : ''}.`);
+  if (an && an < 1949) dg('Plomb (CREP)', 'obligatoire', 'Permis de construire antérieur au 1er janvier 1949.');
+  if (an && an < 1997) dg('Amiante', 'obligatoire', 'Permis de construire antérieur au 1er juillet 1997 ; en copropriété, demandez aussi le DTA des parties communes.');
+  if (!an) dg('Plomb, amiante', 'selon l’année de construction', 'Année inconnue ici : avant 1949 → plomb ; avant juillet 1997 → amiante. Demandez l’acte ou le permis au vendeur.');
+  if (!an || an < new Date().getFullYear() - 15) dg('Électricité et gaz', an ? 'probable' : 'selon l’installation', 'Installations de plus de 15 ans ; le gaz seulement s’il y a une installation.');
+  dg('Termites', 'selon arrêté préfectoral', 'Zone déclarée par arrêté : à vérifier en mairie ou auprès du diagnostiqueur (Alpes-Maritimes : nombreuses communes concernées).');
+  if (type === 'M') dg('Assainissement', 'si non collectif', 'Hors tout-à-l’égout : contrôle SPANC de moins de 3 ans ; sinon, l’acheteur a un an pour mettre en conformité.');
+  if (copro) dg('Mesurage Carrez', 'obligatoire', 'Surface privative du lot ; une erreur de plus de 5 % ouvre une action en baisse de prix.');
+  if (type === 'A' || copro) dg('Pré-état daté et documents de copropriété', 'avant le compromis', 'Règlement, PV des 3 dernières AG, carnet d’entretien, fiche synthétique, montant des charges et fonds travaux.');
+  dg('Nuisances sonores aériennes', 'si zone PEB', 'À vérifier si la commune est couverte par un plan d’exposition au bruit (aéroport, aérodrome).');
+  // mentions obligatoires de l'annonce
+  const mentions = [];
+  if (cl) mentions.push(`Classe énergie ${cl}${kwh ? ` (${fr1(kwh)} kWh/m²/an)` : ''}${(d && d.gl) || (A.dpe && A.dpe.gl) ? ` · GES ${(d && d.gl) || A.dpe.gl}` : ''}`);
+  if ('FG'.includes(cl || '')) mentions.push('« Logement à consommation énergétique excessive »');
+  if (A.dpe && A.dpe.cmin && A.dpe.cmax) mentions.push(`Dépenses théoriques annuelles d’énergie : ${eur(A.dpe.cmin)} à ${eur(A.dpe.cmax)} (année de référence des prix à indiquer)`); else if (d && d.cout) mentions.push(`Coût annuel d’énergie (ADEME) : ${eur(d.cout)}`);
+  if (A.prix) mentions.push(`Prix ${eur(A.prix)} : préciser « honoraires inclus, à la charge de l’acquéreur : x % » ou « honoraires à la charge du vendeur », et le prix hors honoraires`);
+  if (copro) mentions.push(`Copropriété : ${A.copro && A.copro.lots ? A.copro.lots + ' lots' : mine && mine.lotsH ? mine.lotsH + ' lots d’habitation (registre)' : 'nombre de lots à indiquer'} · charges annuelles ${A.copro && A.copro.charges ? eur(A.copro.charges) : 'à indiquer'} · « procédure en cours : oui / non »`);
+  if (R.plu && R.plu.z) mentions.push(`Information utile (non obligatoire) : zone ${R.plu.z} du PLU`);
+  const permis = (P.permis || []).filter(p => p.lgt > 0);
+  const natLib = n => n === 1 ? 'construction neuve' : n === 2 ? 'travaux sur l’existant' : '';
+  const prompt = `Tu es un conseiller immobilier expérimenté. Voici ce que les données publiques disent d’un bien avant un rendez-vous vendeur (${type === 'M' ? 'maison' : 'appartement'}${A.surface ? ' de ' + fmt(A.surface) + ' m²' : ''}, ${esc(A.ville || P.centre.ville || '')}) :\n- Points à anticiper : ${items.map(i => i.t).join(' ; ') || 'aucun point bloquant'}.\n- Diagnostics : ${diags.map(x => x.n + ' (' + x.q + ')').join(', ')}.\n${est && est.valeur ? `- Valeur par 5 ventes comparables : ${eur(est.valeur)}${A.prix ? ', prix affiché ' + eur(A.prix) + ' (' + pct(est.ecart) + ')' : ''}.\n` : ''}Prépare : 1) les 5 questions à poser au vendeur, 2) comment annoncer chaque point sans l’inquiéter, 3) la liste des pièces à lui demander. Réponds en français simple, sans jargon, en 20 lignes.`;
+  return `<section id="mandat" class="sec pro"><div class="sec-h"><span class="n">10</span><h2>Avant le mandat</h2><p>Ce que l’acheteur et son notaire vont découvrir sur le bien : autant le savoir avant le rendez-vous vendeur. Rouge : à traiter avant la mise en vente. Orange : à vérifier. Bleu : bon à savoir.</p></div>
+    <div class="grid g2">
+      <div class="card"><h3>À anticiper</h3>${items.length ? `<ul class="ant">${items.map(i => `<li class="${i.lvl}"><b>${esc(i.t)}</b>${i.why ? `<span>${esc(i.why)}</span>` : ''}</li>`).join('')}</ul>` : '<p class="note">Rien de bloquant dans les données publiques : la discussion portera sur le prix et le calendrier.</p>'}
+        ${permis.length ? `<h3 style="margin-top:14px">Permis de construire autour (${permis.length} à moins d’1 km, 3 ans)</h3><p class="note">Ce qui se construit change la valeur dans les deux sens ; l’acheteur le verra au compromis (certificat d’urbanisme) ou en visite.</p><div class="tbl"><table><thead><tr><th>Autorisé</th><th>Adresse du terrain</th><th class="r">Logements</th><th>Nature</th><th>Demandeur</th><th class="r">Dist.</th></tr></thead><tbody>${permis.slice(0, 12).map(p => `<tr><td class="mono">${p.aut ? monthFr(p.aut) : '–'}${p.doc ? '<br><span class="small muted">chantier ' + monthFr(p.doc) + '</span>' : ''}${p.fin ? '<br><span class="small muted">achevé ' + monthFr(p.fin) + '</span>' : ''}</td><td>${esc(p.adr || p.parc)}</td><td class="r mono">${p.lgt}${p.soc ? ' <span class="small muted">(' + p.soc + ' sociaux)</span>' : ''}${p.surf ? '<br><span class="small muted">' + fmt(p.surf) + ' m²</span>' : ''}</td><td>${esc(natLib(p.nature))}</td><td>${esc(p.dem)}</td><td class="r mono">${fmt(p.d)} m</td></tr>`).join('')}</tbody></table></div>` : P.permisTotal ? `<p class="note" style="margin-top:12px">Aucun permis créant des logements à moins d’1 km sur 3 ans (${P.permisTotal.commune} sur la commune).</p>` : ''}
+      </div>
+      <div class="card"><h3>Diagnostics à commander</h3><p class="note">D’après le type, l’année de construction, le DPE publié et les risques de la parcelle. Le diagnostiqueur valide la liste.</p>
+        <div class="tbl"><table><thead><tr><th>Diagnostic</th><th>Statut</th><th>Pourquoi</th></tr></thead><tbody>${diags.map(x => `<tr><td><b>${esc(x.n)}</b></td><td>${esc(x.q)}</td><td class="small">${x.why}</td></tr>`).join('')}</tbody></table></div>
+        <h3 style="margin-top:14px">Mentions à mettre dans l’annonce</h3><ul class="small" style="margin:6px 0 0;padding-left:18px">${mentions.map(m => `<li>${m}</li>`).join('')}</ul>
+        <div class="row noprint" style="margin-top:10px"><button class="btn-s" data-act="copy-mentions">Copier les mentions</button><button class="btn-s" data-act="copy-mandat">Copier pour ChatGPT : préparer le rendez-vous</button></div>
+        <textarea id="mandatPrompt" class="hidden" readonly>${esc(prompt)}</textarea><textarea id="mandatMentions" class="hidden" readonly>${esc(mentions.map(m => '• ' + m.replace(/<[^>]+>/g, '')).join('\n'))}</textarea>
+      </div>
+    </div></section>`;
 }
 
 function secRdv(P, est, ctx) {
@@ -304,7 +388,7 @@ function secRdv(P, est, ctx) {
     A.terrain ? `Terrain ${fmt(A.terrain)} m² : limites, servitudes, débroussaillement si zone boisée.` : null,
     'Photos et mesures : surface habitable (loi Carrez si copro), hauteur sous plafond, état toiture/menuiseries.'
   ];
-  return `<section id="rdv" class="sec pro"><div class="sec-h"><span class="n">10</span><h2>Préparer le rendez-vous</h2><p>Dix points, dans l’ordre où le vendeur va les entendre.</p></div>
+  return `<section id="rdv" class="sec pro"><div class="sec-h"><span class="n">11</span><h2>Préparer le rendez-vous</h2><p>Dix points, dans l’ordre où le vendeur va les entendre.</p></div>
     <div class="card"><ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:14.5px">${li(items)}</ol>
     ${!ctx.standalone ? `<div class="row" style="margin-top:12px"><a class="btn btn-p" href="#rdv/${esc(ctx.id || '')}">Ouvrir le dossier de rendez-vous (3 scénarios de prix) →</a><button class="btn-s" data-act="copy-checklist">Copier la liste</button></div>` : ''}</div></section>`;
 }
@@ -312,7 +396,7 @@ function secRdv(P, est, ctx) {
 function secSuivi(P, est, ctx) {
   const A = P.annonce; const S = ctx.suivi || []; if (A.mode === 'adresse' || ctx.standalone) return '';
   const first = S[0]; const j = first ? joursDepuis(first.date) : null;
-  return `<section id="suivi" class="sec pro"><div class="sec-h"><span class="n">11</span><h2>Suivi de l’annonce</h2><p>Chaque « mettre à jour » relit l’annonce sur le portail et note le prix. Les baisses et le retrait apparaissent ici et dans « Suivi ».</p></div>
+  return `<section id="suivi" class="sec pro"><div class="sec-h"><span class="n">12</span><h2>Suivi de l’annonce</h2><p>Chaque « mettre à jour » relit l’annonce sur le portail et note le prix. Les baisses et le retrait apparaissent ici et dans « Suivi ».</p></div>
     <div class="card"><div class="row sp"><div>${first ? `Vue la première fois le <b>${dateFr(first.date)}</b> (${j} jours) à ${eur(first.prix)}.` : 'Pas encore suivie.'} ${S.length > 1 ? ` Aujourd’hui ${eur(S[S.length - 1].prix)} : <b class="${S[S.length - 1].prix < first.prix ? 'warn' : ''}">${pct(S[S.length - 1].prix / first.prix - 1)}</b>.` : ''}${S.some(s => s.retiree) ? ' <span class="chip bad">Retirée du portail</span>' : ''}</div><button class="btn-s" data-act="refresh">Mettre à jour maintenant</button></div>
     ${S.length ? `<div class="tbl" style="margin-top:8px"><table><thead><tr><th>Date</th><th class="r">Prix</th><th>Note</th></tr></thead><tbody>${S.slice().reverse().slice(0, 12).map(s => `<tr><td class="mono">${dateFr(s.date)}</td><td class="r mono">${s.prix ? eur(s.prix) : '–'}</td><td>${s.retiree ? '<span class="bad">retirée</span>' : s.note || ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
     </div></section>`;
@@ -322,7 +406,7 @@ function secMethode(P) {
   const E = P.etapes || {};
   const srcs = [['Annonce', P.annonce.portail === 'Bien’ici' ? 'Bien’ici, fiche publique de l’annonce (position floutée par le portail)' : 'saisie du conseiller'], ['Adresse', 'Base Adresse Nationale (api-adresse.data.gouv.fr) ; DPE ADEME (data.ademe.fr, dpe03existant) pour retrouver l’adresse'],
     ['Ventes', (P.marche && P.marche.source) || 'DVF Etalab (app.dvf.etalab.gouv.fr)'], ['Cadastre et PLU', 'API Carto IGN (cadastre, Géoportail de l’urbanisme)'], ['Bâtiments', 'BD TOPO V3 IGN (hauteurs, logements, altitudes)'], ['Copropriétés', 'Registre national des copropriétés (data.gouv.fr)'], ['Risques', 'Géorisques (argile, séisme, radon, TRI, CatNat, rapport au point)'], ['Vivre ici', 'IGN BD TOPO (écoles, santé, sport, culture, transports, trait de côte) et OpenStreetMap (commerces, bus)']];
-  return `<section id="methode" class="sec"><div class="sec-h"><span class="n">12</span><h2>Méthode, sources, limites</h2></div>
+  return `<section id="methode" class="sec"><div class="sec-h"><span class="n">13</span><h2>Méthode, sources, limites</h2></div>
     <div class="grid g2"><div class="card"><h3>Comment c’est calculé</h3><ul style="padding-left:18px;font-size:14px;display:flex;flex-direction:column;gap:6px;margin:8px 0 0">
       <li><b>Adresse :</b> le DPE de la commune dont la date, la consommation, les émissions et le coût collent à l’annonce ; score et certitude affichés, candidats listés.</li>
       <li><b>Prix :</b> ventes du même type à 800 m depuis 6 ans ; chaque vente est recalée sur la médiane annuelle du secteur ; les 5 plus ressemblantes (surface, distance, date, terrain) donnent la médiane ; fourchette « 8 cas sur 10 » = dispersion des ventes recalées.</li>
@@ -337,9 +421,9 @@ function secMethode(P) {
 /* ---------- assemblage ---------- */
 VA.renderDossier = function (P, ctx) {
   ctx = ctx || {}; const est = ctx.est || VA.estimer(P, ctx.adj);
-  const toc = ['synthese:Synthèse', 'ou:Où', 'prix:Prix', 'bien:Bien', 'soleil:Soleil', 'risques:Risques', 'copro:Copro', 'vivre:Vivre ici', 'acheteur:Acheteur', 'prospecter:Prospecter', 'rdv:Rendez-vous', 'suivi:Suivi', 'methode:Méthode'];
-  return `<nav class="toc noprint">${toc.map(t => { const [id, lab] = t.split(':'); const pro = ['prospecter', 'rdv', 'suivi'].includes(id) ? ' pro' : ''; return `<a class="${pro}" href="#${id}" data-anchor="${id}">${lab}</a>`; }).join('')}</nav>` +
-    secHero(P, est, ctx) + secOu(P, est, ctx) + secPrix(P, est, ctx) + secBien(P, est, ctx) + secSoleil(P, est, ctx) + secRisques(P) + secCopro(P, ctx) + secVivre(P) + secAcheteur(P, est, ctx) + secProspecter(P, est, ctx) + secRdv(P, est, ctx) + secSuivi(P, est, ctx) + secMethode(P);
+  const toc = ['synthese:Synthèse', 'ou:Où', 'prix:Prix', 'bien:Bien', 'soleil:Soleil', 'risques:Risques', 'copro:Copro', 'vivre:Vivre ici', 'acheteur:Acheteur', 'prospecter:Prospecter', 'mandat:Avant le mandat', 'rdv:Rendez-vous', 'suivi:Suivi', 'methode:Méthode'];
+  return `<nav class="toc noprint">${toc.map(t => { const [id, lab] = t.split(':'); const pro = ['prospecter', 'mandat', 'rdv', 'suivi'].includes(id) ? ' pro' : ''; return `<a class="${pro}" href="#${id}" data-anchor="${id}">${lab}</a>`; }).join('')}</nav>` +
+    secHero(P, est, ctx) + secOu(P, est, ctx) + secPrix(P, est, ctx) + secBien(P, est, ctx) + secSoleil(P, est, ctx) + secRisques(P) + secCopro(P, ctx) + secVivre(P) + secAcheteur(P, est, ctx) + secProspecter(P, est, ctx) + secMandat(P, est, ctx) + secRdv(P, est, ctx) + secSuivi(P, est, ctx) + secMethode(P);
 };
 
 /* ---------- interactions après insertion ---------- */

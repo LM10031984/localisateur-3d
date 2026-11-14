@@ -26,7 +26,9 @@ Object.assign(VA, {fmt, eur, kE, m2, pct, fr1, dateFr, monthFr, esc, titleCase, 
 
 /* ---------- lecture des ventes ---------- */
 VA.ventes = P => (P.marche && P.marche.ventes || []).map(v => ({x: v[0], y: v[1], t: v[2], pk: v[3], s: v[4], n: v[5], d: v[6], g: v[7], a: v[8], km: v[9], pc: v[10], nl: v[11] || 1, pm2: v[3] * 1000 / v[4]}));
-VA.dpeList = P => (P.dpe && P.dpe.L || []).map(r => ({date: r[0], adr: r[1], t: r[2], s: r[3], l: r[4], an: r[5], et: r[6], res: r[7], comp: r[8], en: r[9], cout: r[10], id: r[11], x: r[12], y: r[13], copro: r[14], kwh: r[15]}));
+VA.dpeList = P => (P.dpe && P.dpe.L || []).map(r => ({date: r[0], adr: r[1], t: r[2], s: r[3], l: r[4], an: r[5], et: r[6], res: r[7], comp: r[8], en: r[9], cout: r[10], id: r[11], x: r[12], y: r[13], copro: r[14], kwh: r[15], nxt: r[16] || null, orig: r[17] || null, q: !!r[18]}));
+VA.ademe = id => id ? 'https://observatoire-dpe-audit.ademe.fr/afficher-dpe/' + encodeURIComponent(id) : null;
+VA.monSecteur = adr => 'https://app.myacademia.ai/app/dossiers/nouveau?adresse=' + encodeURIComponent(adr || '');
 VA.copros = P => (P.copros || []).map(c => ({im: c[0], nom: c[1], adr: c[2], lotsH: c[3], lots: c[4], per: c[5], typeSyndic: c[6], syndic: c[7], mandat: c[8], fin: c[9], x: c[10], y: c[11], sujet: c[12], immat: c[13]}));
 VA.typeBien = P => { const A = P.annonce; if (A.type === 'M' || A.type === 'A') return A.type; const d = P.adresse && P.adresse.dpe; if (d && d.type === 'maison') return 'M'; if (d && d.type === 'appartement') return 'A'; const M = P.marche; return (M && M.allMed && M.allMed.M && !M.allMed.A) ? 'M' : 'A'; };
 

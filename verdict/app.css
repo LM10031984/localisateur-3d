@@ -139,3 +139,16 @@ details summary{cursor:pointer;font-weight:600;font-size:14px;color:var(--ink-2)
   .sec{break-inside:avoid;margin-top:14px}
   a{color:inherit;text-decoration:none}
 }
+
+/* accueil : trois entrées */
+.entrees{display:flex;flex-direction:column;gap:12px}
+.entree{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:start;padding:12px 12px 12px 10px;border:1px solid var(--line);border-radius:12px;background:#fafaf7}
+.entree .num{width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font:700 14px 'Bricolage Grotesque',sans-serif}
+.entree b{font-size:15px}.entree p{margin:2px 0 8px}
+kbd{font:600 12px 'IBM Plex Mono',monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;background:#fff}
+/* avant le mandat */
+.ant{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.ant li{padding:8px 10px 8px 14px;border-left:4px solid #999;border-radius:8px;background:#fafaf7}
+.ant li b{display:block;font-size:14px}.ant li span{display:block;font-size:13px;color:var(--ink-2);margin-top:2px}
+.ant li.r{border-left-color:#c0392b;background:#fdf1ef}.ant li.o{border-left-color:#b7791f;background:#fbf4e6}.ant li.b{border-left-color:#2F44CE;background:#eef0fb}
+.hidden{display:none}

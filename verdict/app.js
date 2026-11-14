@@ -39,9 +39,12 @@ async function saveDossier(P) {
 const routes = {};
 function go(h) { location.hash = h; }
 window.addEventListener('hashchange', route);
+const b64dec = s => { try { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return JSON.parse(decodeURIComponent(escape(atob(s)))); } catch (e) { return null; } };
 function route() {
   const hsh = decodeURIComponent(location.hash.slice(1));
   const m = hsh.match(/^u=(.+)$/); if (m) { history.replaceState(null, '', location.pathname); screenHome(m[1]); return; }
+  const mf = location.hash.match(/^#f=([A-Za-z0-9_-]+)/); if (mf) { history.replaceState(null, '', location.pathname); const f = b64dec(mf[1]); screenHome(); if (f) lancer({fiche: f}); else toast('Lecture de l’annonce impossible : les données reçues sont illisibles.', 6000); return; }
+  const ma = hsh.match(/^a=(.+)$/); if (ma) { history.replaceState(null, '', location.pathname); screenHome(); $('#iAdr').value = ma[1]; lancer({adresse: ma[1]}); return; }
   const [name, arg] = hsh.split('/');
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + (name || 'nouveau')));
   (routes[name] || routes.nouveau)(arg);
@@ -53,44 +56,49 @@ routes.nouveau = (prefill) => screenHome(prefill);
 routes[''] = routes.nouveau;
 function screenHome(prefill) {
   const m = meta().slice(0, 6);
-  const bm = `javascript:void(window.open('${BASE}#u='+encodeURIComponent(location.href),'_blank'))`;
   view(`
   <div class="hero" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)">
     <div class="card" style="display:flex;flex-direction:column;gap:12px">
-      <span class="kicker">Verdict annonce</span>
-      <h1>Une annonce, 40 secondes : l’adresse, le vrai prix, le plan, le soleil, les risques, le quartier.</h1>
-      <p class="note">Collez un lien Bien’ici. Le dossier se construit avec les données publiques (DVF, DPE, cadastre, IGN, Géorisques), dans votre navigateur, sans rien aspirer des portails. Pour un autre portail, saisissez l’annonce à la main : la recherche d’adresse par le DPE marche pareil.</p>
-      <form id="fUrl" class="row" style="gap:8px"><input type="url" id="iUrl" placeholder="https://www.bienici.com/annonce/vente/…" value="${esc(prefill || '')}" style="flex:1 1 360px" required><button class="btn-p" type="submit">Verdict</button></form>
-      <form id="fAdr" class="row" style="gap:8px"><input type="text" id="iAdr" placeholder="… ou une adresse : 12 avenue des Camélias, Cagnes-sur-Mer" style="flex:1 1 360px"><button type="submit">Dossier d’adresse</button></form>
-      <details><summary>Saisir une annonce à la main (autre portail, flyer, bouche-à-oreille)</summary>
-        <form id="fMan" class="grid g3" style="margin-top:10px">
-          <label class="f">Type<select name="type"><option value="A">Appartement</option><option value="M">Maison</option></select></label>
-          <label class="f">Prix affiché (€)<input type="number" name="prix" required min="10000" step="1000"></label>
-          <label class="f">Surface (m²)<input type="number" name="surface" required min="9" step="1"></label>
-          <label class="f">Pièces<input type="number" name="pieces" min="1" step="1"></label>
-          <label class="f">Terrain (m², maisons)<input type="number" name="terrain" min="0" step="10"></label>
-          <label class="f">Code postal et ville<input type="text" name="lieu" required placeholder="06800 Cagnes-sur-Mer"></label>
-          <label class="f">Adresse ou quartier (si connu)<input type="text" name="adresse" placeholder="avenue Jean Mermoz"></label>
-          <label class="f">DPE : classe<select name="dpel"><option value="">?</option>${'ABCDEFG'.split('').map(l => `<option>${l}</option>`).join('')}</select></label>
-          <label class="f">DPE : kWh/m²/an<input type="number" name="kwh" step="0.1" min="0"></label>
-          <label class="f">DPE : GES kg/m²/an<input type="number" name="ges" step="0.1" min="0"></label>
-          <label class="f">DPE : date (si affichée)<input type="date" name="dpedate"></label>
-          <label class="f">Lien de l’annonce (facultatif)<input type="url" name="src" placeholder="https://…"></label>
-          <div style="display:flex;align-items:flex-end"><button class="btn-p" type="submit">Verdict</button></div>
-        </form></details>
+      <span class="kicker">Dossier du bien</span>
+      <h1>Un bien, 40 secondes : l’adresse, le vrai prix, le plan, le soleil, les risques, la copropriété, le quartier.</h1>
+      <p class="note">Trois entrées, un seul dossier. Tout se construit avec les données publiques (DVF, DPE, cadastre, IGN, Géorisques, registre des copropriétés), dans votre navigateur : rien n’est aspiré des portails, rien n’est envoyé à un serveur.</p>
+      <div class="entrees">
+        <div class="entree"><span class="num">1</span><div><b>Une annonce</b><p class="small">Collez un lien Bien’ici, ou cliquez le <a href="#favori">favori</a> depuis n’importe quel portail (SeLoger, Leboncoin, Figaro, lesiteimmo, Green-Acres…).</p>
+          <form id="fUrl" class="row" style="gap:8px"><input type="url" id="iUrl" placeholder="https://www.bienici.com/annonce/vente/…" value="${esc(prefill || '')}" style="flex:1 1 300px" required><button class="btn-p" type="submit">Verdict</button></form></div></div>
+        <div class="entree"><span class="num">2</span><div><b>Une adresse</b><p class="small">Un bien repéré par le Localisateur, un prospect, une estimation à préparer : dernière vente, DPE, valeur indicative, risques, copropriété, soleil.</p>
+          <form id="fAdr" class="row" style="gap:8px"><input type="text" id="iAdr" placeholder="12 avenue des Camélias, Cagnes-sur-Mer" style="flex:1 1 300px"><button type="submit">Dossier d’adresse</button></form></div></div>
+        <div class="entree"><span class="num">3</span><div><b>Un bien à estimer</b><p class="small">Pas d’annonce : décrivez le bien, avec le prix souhaité par le vendeur si vous l’avez. Le verdict se calcule pareil.</p>
+          <details><summary>Décrire le bien</summary>
+          <form id="fMan" class="grid g3" style="margin-top:10px">
+            <label class="f">Type<select name="type"><option value="A">Appartement</option><option value="M">Maison</option></select></label>
+            <label class="f">Prix (affiché ou souhaité, €)<input type="number" name="prix" required min="10000" step="1000"></label>
+            <label class="f">Surface (m²)<input type="number" name="surface" required min="9" step="1"></label>
+            <label class="f">Pièces<input type="number" name="pieces" min="1" step="1"></label>
+            <label class="f">Terrain (m², maisons)<input type="number" name="terrain" min="0" step="10"></label>
+            <label class="f">Code postal et ville<input type="text" name="lieu" required placeholder="06800 Cagnes-sur-Mer"></label>
+            <label class="f">Adresse ou quartier (si connu)<input type="text" name="adresse" placeholder="avenue Jean Mermoz"></label>
+            <label class="f">DPE : classe<select name="dpel"><option value="">?</option>${'ABCDEFG'.split('').map(l => `<option>${l}</option>`).join('')}</select></label>
+            <label class="f">DPE : kWh/m²/an<input type="number" name="kwh" step="0.1" min="0"></label>
+            <label class="f">DPE : GES kg/m²/an<input type="number" name="ges" step="0.1" min="0"></label>
+            <label class="f">DPE : date (si affichée)<input type="date" name="dpedate"></label>
+            <label class="f">Lien de l’annonce (facultatif)<input type="url" name="src" placeholder="https://…"></label>
+            <div style="display:flex;align-items:flex-end"><button class="btn-p" type="submit">Verdict</button></div>
+          </form></details></div></div>
+      </div>
       <div id="progress" class="hidden"><div class="row sp"><b id="pTitle">Collecte…</b><span class="mono muted" id="pTime"></span></div><ul class="steps" id="pSteps"></ul><p class="note" id="pErr" style="color:var(--bad)"></p></div>
     </div>
     <div class="card" style="display:flex;flex-direction:column;gap:10px">
-      <span class="kicker">Favori 1 clic</span>
-      <p class="small">Glissez ce bouton dans votre barre de favoris. Sur une annonce Bien’ici, cliquez-le : le verdict s’ouvre ici.</p>
-      <a class="btn btn-d" href="${bm}" onclick="return false" draggable="true" title="Glissez-moi dans la barre de favoris">★ Verdict annonce</a>
-      <p class="note">Rien n’est envoyé à un serveur : les dossiers restent dans ce navigateur (exportez-les depuis Réglages pour les garder ailleurs).</p>
+      <span class="kicker">Le favori, sur tous les portails</span>
+      <p class="small">Glissez ce bouton dans votre barre de favoris. Sur la fiche d’une annonce — Bien’ici, SeLoger, Leboncoin, Figaro Immobilier, Belles Demeures, ParuVendu, lesiteimmo, Green-Acres, et la plupart des sites d’agence — cliquez-le : l’annonce est lue sur place et le dossier s’ouvre ici.</p>
+      <a class="btn btn-d" id="bmU" href="#favori" draggable="true" title="Glissez-moi dans la barre de favoris">★ Dossier du bien</a>
+      <p class="note"><a href="#favori">Installer pas à pas</a> · le favori lit la page ouverte, rien d’autre : aucune navigation automatique, aucune aspiration.</p>
       <span class="kicker" style="margin-top:6px">Ce que vous obtenez</span>
       <ul class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px">
-        <li>L’adresse retrouvée par le DPE, avec le niveau de certitude</li><li>Le verdict de prix sur 5 ventes comparables recalées</li><li>Le plan : parcelle, bâtiments, ventes, DPE, comparables</li><li>Les ombres du soleil heure par heure, par saison</li><li>PLU, argile, séisme, inondation, CatNat au point</li><li>La copropriété (registre) et le quartier (écoles, commerces, bus)</li><li>Les signaux de prospection autour, le rendez-vous préparé</li><li>Le suivi de l’annonce : baisses, retrait</li></ul>
+        <li>L’adresse retrouvée par le DPE, avec le niveau de certitude</li><li>Le verdict de prix sur 5 ventes comparables recalées</li><li>Le plan : parcelle, bâtiments, ventes, DPE, comparables</li><li>Les ombres du soleil heure par heure, par saison, en 3D</li><li>PLU, argile, séisme, inondation, CatNat au point</li><li>La copropriété (registre) et le quartier (écoles, commerces, bus)</li><li>Avant le mandat : diagnostics à commander, mentions de l’annonce, points à anticiper</li><li>Le rendez-vous préparé, le point marché propriétaire, le suivi de l’annonce</li></ul>
     </div>
   </div>
   ${m.length ? `<div class="sec"><div class="sec-h"><h2>Derniers dossiers</h2><p><a href="#dossiers">tous les dossiers →</a></p></div><div class="grid g3">${m.map(cardDossier).join('')}</div></div>` : ''}`);
+  favoriHref().then(h => { const b = $('#bmU'); if (b && h) { b.href = h; b.onclick = e => e.preventDefault(); } });
   $('#fUrl').addEventListener('submit', e => { e.preventDefault(); lancer({url: $('#iUrl').value.trim()}); });
   $('#fAdr').addEventListener('submit', e => { e.preventDefault(); const q = $('#iAdr').value.trim(); if (q) lancer({adresse: q}); });
   $('#fMan').addEventListener('submit', e => { e.preventDefault(); const f = new FormData(e.target); const g = k => f.get(k); const lieu = (g('lieu') || '').match(/(\d{5})\s*(.*)/);
@@ -98,6 +106,27 @@ function screenHome(prefill) {
       dpe: {l: g('dpel') || null, kwh: +g('kwh') || null, ges: +g('ges') || null, date: g('dpedate') || null}, copro: {is: g('type') === 'A'}, titre: `${g('type') === 'M' ? 'Maison' : 'Appartement'} ${g('surface')} m² · ${lieu ? lieu[2] : g('lieu')}`}}); });
   if (prefill) lancer({url: prefill});
 }
+/* le favori universel : le code minifié (favori.min.js) devient une adresse javascript: ; le % et le # y sont encodés, le reste passe tel quel */
+let favoriCode = null;
+async function favoriHref() {
+  if (favoriCode === null) { try { favoriCode = await (await fetch('favori.min.js?v=1', {cache: 'no-cache'})).text(); } catch (e) { favoriCode = ''; } }
+  return favoriCode ? 'javascript:' + encodeURI(favoriCode).replace(/#/g, '%23') : '';
+}
+routes.favori = async () => {
+  const h = await favoriHref();
+  view(`<div class="sec"><div class="sec-h"><span class="n">★</span><h2>Installer le favori « Dossier du bien »</h2><p>Une seule fois, sur ordinateur, dans Chrome ou Edge. Ensuite, un clic sur n’importe quelle annonce.</p></div>
+  <div class="grid g2">
+    <div class="card"><h3>1 · Affichez la barre de favoris</h3><p>Mac : <kbd>Cmd</kbd> + <kbd>Maj</kbd> + <kbd>B</kbd>. PC : <kbd>Ctrl</kbd> + <kbd>Maj</kbd> + <kbd>B</kbd>. Une fine barre apparaît sous la barre d’adresse.</p>
+      <h3 style="margin-top:14px">2 · Glissez ce bouton dans la barre</h3><p>Cliquez dessus, gardez le clic, déplacez-le jusqu’à la barre de favoris, relâchez. Ne cliquez pas dessus ici.</p>
+      <p><a class="btn btn-d" href="${h || '#favori'}" ${h ? 'onclick="return false"' : ''} draggable="true">★ Dossier du bien</a></p>
+      <h3 style="margin-top:14px">3 · Essayez</h3><p>Ouvrez la fiche d’une annonce (pas la liste des résultats) sur Bien’ici, SeLoger, Leboncoin, Figaro Immobilier, Belles Demeures, ParuVendu, lesiteimmo ou Green-Acres, puis cliquez le favori : un onglet s’ouvre, le dossier se construit en 10 à 40 secondes.</p></div>
+    <div class="card"><h3>Le glisser ne marche pas ?</h3><p>Copiez le favori, puis clic droit sur la barre de favoris → « Ajouter une page ». Nom : <b>Dossier du bien</b>. Dans « URL », collez (<kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>V</kbd>) et enregistrez. Le texte est très long et commence par « javascript: » : c’est normal, tout le lecteur est dedans.</p>
+      <p><button type="button" id="cpF">Copier le favori</button></p>
+      <h3 style="margin-top:14px">Ce qu’il fait, ce qu’il ne fait pas</h3><ul class="small"><li>Il lit la page ouverte : prix, surface, pièces, terrain, DPE (classe, kWh, GES, date quand elle est affichée), étage, copropriété, commune, position floutée. Puis il ouvre le dossier ici.</li><li>Il ne navigue pas, n’aspire rien, n’envoie rien à un serveur : les champs lus voyagent dans l’adresse de la page du dossier.</li><li>Sur un site inconnu, il lit le texte de l’annonce ; vérifiez les champs dans le dossier.</li><li>Il remplace le favori « Verdict annonce » de septembre : supprimez l’ancien (clic droit, Supprimer).</li></ul>
+      <p class="note">Vous aviez déjà le Localisateur ? Il reste votre capteur principal : il trouve l’adresse et, d’un clic, ouvre le dossier complet ici.</p></div>
+  </div></div>`);
+  $('#cpF').onclick = () => { if (!h) return toast('Favori indisponible (favori.min.js non chargé).', 4000); navigator.clipboard.writeText(h).then(() => toast('Favori copié : clic droit sur la barre de favoris → Ajouter une page → collez dans URL.', 6000)); };
+};
 function cardDossier(x) {
   const c = x.verdict === 'Sous le marché' ? 'ok' : x.verdict === 'Dans le marché' ? 'acc' : x.verdict === 'Un peu au-dessus' ? 'warn' : x.verdict ? 'bad' : '';
   return `<a class="card dcard" href="#d/${esc(x.id)}"><div class="row sp"><span class="chip ${c}">${esc(x.verdict || (x.mode === 'adresse' ? 'Dossier d’adresse' : 'sans verdict'))}</span><span class="tag">${dateFr(x.date)}</span></div><span class="t">${esc(x.titre)}</span><span class="small muted num-adr">${x.adr ? esc(niceAdr(x.adr)) + ' · ' + esc(x.certitude) : esc(x.ville || '')}</span>${x.prix ? `<span class="small mono">${eur(x.prix)}${x.valeur ? ' · valeur ' + kE(x.valeur) + ' · ' + pct(x.ecart) : ''}</span>` : ''}</a>`;
@@ -117,17 +146,18 @@ async function lancer(input) {
 
 /* ---------- écran : dossier ---------- */
 routes.d = async (id) => {
-  const P = await DB.get(id); if (!P) { view('<div class="card">Dossier introuvable dans ce navigateur. <a href="#nouveau">Nouveau verdict</a></div>'); return; }
+  const P = await DB.get(id); if (!P) { view('<div class="card">Dossier introuvable dans ce navigateur. <a href="#nouveau">Nouveau dossier</a></div>'); return; }
   const client = document.body.classList.contains('client');
   const ctx = {id, adj: adjOf(id), suivi: suivi()[id] || [], reglages: reglages(), standalone: false};
   ctx.onAdj = arr => { setAdj(id, arr); routes.d(id); };
   ctx.onAct = async (act, b) => {
     if (act === 'print') window.print();
     else if (act === 'export') exportHtml(P, ctx);
+    else if (act === 'copy-mentions' || act === 'copy-mandat') { const ta = document.getElementById(act === 'copy-mandat' ? 'mandatPrompt' : 'mandatMentions'); if (ta) navigator.clipboard.writeText(ta.value).then(() => toast(act === 'copy-mandat' ? 'Copié : collez dans ChatGPT ou Claude.' : 'Mentions copiées.')); }
     else if (act === 'copy-checklist') { const txt = [...document.querySelectorAll('#rdv ol li')].map((l, i) => (i + 1) + '. ' + l.textContent).join('\n'); navigator.clipboard.writeText(txt).then(() => toast('Liste copiée.')); }
     else if (act === 'refresh') { b.disabled = true; b.textContent = 'Lecture…'; await refreshListing(id); routes.d(id); }
   };
-  const v = view(`<div id="dossier">${VA.renderDossier(P, ctx)}</div><div class="foot"><span>Verdict annonce · données publiques · ${esc(reglages().conseiller || '')} ${esc(reglages().agence || '')}</span><span><a href="#nouveau">Nouveau verdict</a> · <a href="#dossiers">Mes dossiers</a> · <button class="btn-s" id="delD">Supprimer ce dossier</button></span></div>`);
+  const v = view(`<div id="dossier">${VA.renderDossier(P, ctx)}</div><div class="foot"><span>Verdict annonce · données publiques · ${esc(reglages().conseiller || '')} ${esc(reglages().agence || '')}</span><span><a href="#nouveau">Nouveau dossier</a> · <a href="#dossiers">Mes dossiers</a> · <button class="btn-s" id="delD">Supprimer ce dossier</button></span></div>`);
   VA.wireDossier(v.querySelector('#dossier'), P, ctx);
   $('#delD').addEventListener('click', async () => { if (!confirm('Supprimer ce dossier de ce navigateur ?')) return; await DB.del(id); saveMeta(meta().filter(x => x.id !== id)); toast('Dossier supprimé'); go('dossiers'); });
   document.title = VA.titreDossier(P) + ' · Verdict annonce';

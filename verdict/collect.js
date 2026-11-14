@@ -46,6 +46,42 @@ async function lireAnnonce(url) {
   throw new Error('Pour l’instant, seuls les liens Bien’ici sont lus automatiquement. Pour un autre portail, utilisez « Saisir l’annonce à la main » (prix, surface, commune, DPE) : la recherche d’adresse fonctionne pareil.');
 }
 
+/* Annonce lue par le favori (lecteur multi-portails) ou envoyée par le Localisateur : mêmes champs que lireAnnonce */
+function depuisFiche(f) {
+  const A = {v: VERSION, src: f.url || null, capture: new Date().toISOString(), portail: f.site || 'annonce', id: 'f-' + Math.abs([...(f.url || String(Date.now()))].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) | 0, 7)).toString(36),
+    titre: txt(f.title || '', 140) || null, type: f.type === 'M' || f.type === 'A' ? f.type : '?', prix: num(f.price), surface: num(f.surface), pieces: num(f.rooms), terrain: num(f.land),
+    etage: num(f.etage), niveaux: num(f.etages) || num(f.levels), annee: num(f.year), piscine: f.pool === 1 || f.poolChamp === 1 ? true : null, chauffage: f.chauffageTexte ? txt(f.chauffageTexte, 60) : null, expo: f.exposition ? txt(f.exposition, 30) : null,
+    dpe: {l: f.dpe || null, kwh: num(f.dpeKwh), gl: f.dpeGesClasse || null, ges: num(f.dpeGes), date: f.dpeDate || null, cmin: num(f.coutMin), cmax: num(f.coutMax)},
+    copro: {is: f.type === 'A' || !!num(f.lots), lots: num(f.lots), charges: num(f.charges), procedure: f.procedure === 1},
+    cp: f.cp || null, ville: f.city || null, adresse: f.adresse || null, particulier: f.pro === false, agence: f.pro === false ? 'particulier' : null, pub: f.publiee || null,
+    photos: (f.photos || []).length, photo: (f.photos && f.photos[0]) || null, desc: txt(f.texte || f.desc || '', 900),
+    blur: (f.lat && f.lon) ? {lat: +f.lat, lon: +f.lon, r: f.precM === 0 ? 20 : (num(f.precM) || 300), type: f.blurType || null} : null, lecteur: 'favori'};
+  if (f.adresse && f.lat) A.adresseConnue = true;
+  if (!A.prix && !A.surface) throw new Error('Le lecteur n’a trouvé ni prix ni surface sur cette page : saisissez l’annonce à la main.');
+  return A;
+}
+
+/* ---------- Étiquettes DPE : en vigueur, d'origine, au 1er janvier 2027 (porté de Mon secteur, collect/dpe.ts) ---------- */
+const EP_T = [70, 110, 180, 250, 330, 420], GES_T = [6, 11, 30, 50, 70, 100], ABC = 'ABCDEFG';
+const K_OLD = 2.3, K_26 = 1.9, K_27 = 1.7, REF26 = '2026-01-01', REF27 = '2027-01-01', NEW_FROM = '2021-07-01';
+const klass = (ep, ges) => { let a = EP_T.findIndex(x => ep <= x), b = GES_T.findIndex(x => ges <= x); if (a < 0) a = 6; if (b < 0) b = 6; return ABC[Math.max(a, b)]; };
+const elecOf = x => { let e = 0; for (const n of [1, 2, 3]) if (/lectri/i.test(x['type_energie_n' + n] || '')) e += Number(x['conso_5_usages_ef_energie_n' + n]) || 0; return e; };
+const measuredBasis = (rows, from, to, cands, def) => { const r = rows.filter(x => (x.date_etablissement_dpe || '') >= from && (x.date_etablissement_dpe || '') < to && /lectri/i.test(x.type_energie_n1 || '') && !x.type_energie_n2 && Number(x.conso_5_usages_ef_energie_n1))
+  .map(x => Number(x.conso_5_usages_ep) / Number(x.conso_5_usages_ef_energie_n1)).sort((a, b) => a - b); if (r.length < 3) return def; const m = r[r.length >> 1]; return cands.reduce((b, cc) => Math.abs(cc - m) < Math.abs(b - m) ? cc : b, cands[0]); };
+const coefsOf = (rows, today) => ({kOld: measuredBasis(rows, NEW_FROM, REF26, [K_OLD, K_26], K_OLD), k26: measuredBasis(rows, REF26, REF27, [K_OLD, K_26], K_26), inForce: today >= REF27 ? K_27 : K_26});
+/* { cur, orig, nxt, q } : q = recalcul impossible (étiquette publiée ≠ recalcul, électricité sans détail) */
+function labelsOf(x, k) {
+  const l = x.etiquette_dpe, d = x.date_etablissement_dpe || '', keep = {cur: l, orig: l, nxt: l, q: false};
+  if (d < NEW_FROM) return keep;
+  const elec = elecOf(x); if (!elec) return Object.assign(keep, {q: /lectri/i.test(x.type_energie_principale_chauffage || '')});
+  const ep = Number(x.conso_5_usages_par_m2_ep), ges = Number(x.emission_ges_5_usages_par_m2);
+  if (!ep || isNaN(ges) || klass(ep, ges) !== l) return Object.assign(keep, {q: true});
+  const sref = Number(x.conso_5_usages_ep) ? Number(x.conso_5_usages_ep) / ep : Number(x.surface_habitable_logement); if (!sref) return Object.assign(keep, {q: true});
+  const kb = d < REF26 ? k.kOld : d < REF27 ? k.k26 : K_27, at = cc => klass(ep + ((cc - kb) * elec) / sref, ges), kd = d < REF26 ? K_OLD : d < REF27 ? K_26 : K_27;
+  return {cur: at(k.inForce), orig: at(kd), nxt: at(K_27), q: false};
+}
+window.VA.dpeLabels = labelsOf; window.VA.dpeCoefs = coefsOf;
+
 /* ---------- 2. Collecte autour du bien ---------- */
 async function collect(input, onStep) {
   const t0 = performance.now();
@@ -54,6 +90,7 @@ async function collect(input, onStep) {
   const P = {v: 1, outil: 'verdict', genere: new Date().toISOString(), etapes: {}};
   let A;
   if (input.url) { A = await lireAnnonce(input.url); }
+  else if (input.fiche) { A = depuisFiche(input.fiche); }
   else if (input.manuel) { A = Object.assign({v: VERSION, capture: new Date().toISOString(), portail: input.manuel.portail || 'saisie', id: 'man-' + Date.now().toString(36), photos: 0}, input.manuel); }
   else if (input.adresse) { A = {v: VERSION, mode: 'adresse', q: input.adresse, capture: new Date().toISOString(), type: '?', id: 'adr-' + Date.now().toString(36)}; }
   else throw new Error('Rien à analyser.');
@@ -87,7 +124,7 @@ async function collect(input, onStep) {
   if (!lat0) throw new Error('Impossible de situer le bien : ' + ((P.etapes.Position || {}).err || ''));
 
   /* Adresse retrouvée par le DPE */
-  const SEL = 'numero_dpe,date_etablissement_dpe,adresse_ban,identifiant_ban,_geopoint,conso_5_usages_par_m2_ep,emission_ges_5_usages_par_m2,cout_total_5_usages,surface_habitable_logement,type_batiment,etiquette_dpe,etiquette_ges,type_energie_principale_chauffage,numero_immatriculation_copropriete,annee_construction,nombre_niveau_logement,numero_etage_appartement,nom_residence,complement_adresse_logement,code_insee_ban';
+  const SEL = 'numero_dpe,date_etablissement_dpe,adresse_ban,identifiant_ban,_geopoint,conso_5_usages_par_m2_ep,emission_ges_5_usages_par_m2,cout_total_5_usages,surface_habitable_logement,type_batiment,etiquette_dpe,etiquette_ges,type_energie_principale_chauffage,numero_immatriculation_copropriete,annee_construction,nombre_niveau_logement,numero_etage_appartement,nom_residence,complement_adresse_logement,code_insee_ban,conso_5_usages_ep,type_energie_n1,type_energie_n2,type_energie_n3,conso_5_usages_ef_energie_n1,conso_5_usages_ef_energie_n2,conso_5_usages_ef_energie_n3';
   const ADEME = 'https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines?size=600&select=' + SEL;
   const adresse = {trouvee: false, certitude: 'aucune', candidats: []};
   if (A.mode !== 'adresse' && A.dpe && (A.dpe.date || A.dpe.kwh)) await step('Adresse par le DPE', async () => {
@@ -95,12 +132,14 @@ async function collect(input, onStep) {
     const d = A.dpe;
     if (d.date && insee) add((await j(ADEME + '&qs=' + encodeURIComponent(`date_etablissement_dpe:"${d.date}" AND code_insee_ban:"${insee}"`))).results);
     if (d.kwh != null && insee) add((await j(ADEME + '&qs=' + encodeURIComponent(`code_insee_ban:"${insee}" AND conso_5_usages_par_m2_ep:[${(d.kwh - 0.6).toFixed(1)} TO ${(d.kwh + 0.6).toFixed(1)}]`)).catch(() => ({results: []}))).results);
+    if (d.ges != null && insee && !d.date) add((await j(ADEME + '&qs=' + encodeURIComponent(`code_insee_ban:"${insee}" AND emission_ges_5_usages_par_m2:[${(d.ges - 0.6).toFixed(1)} TO ${(d.ges + 0.6).toFixed(1)}]`)).catch(() => ({results: []}))).results);
     if (A.blur) add((await j(ADEME + `&geo_distance=${lon0},${lat0},${(A.blur.r || 50) + 200}`).catch(() => ({results: []}))).results);
     const cands = Object.values(got).map(r => {
       const g = (r._geopoint || '').split(','); const la = +g[0], lo = +g[1];
       let s = 0; const why = [];
       if (d.date && r.date_etablissement_dpe === d.date) { s += 4; why.push('même date'); }
-      if (d.kwh != null && r.conso_5_usages_par_m2_ep != null) { const dk = Math.abs(r.conso_5_usages_par_m2_ep - d.kwh); if (dk <= 0.6) { s += 2; why.push('mêmes kWh'); } else if (dk <= 2) { s += 1; why.push('kWh proches'); } else if (dk > 15) s -= 1; }
+      if (d.kwh != null && r.conso_5_usages_par_m2_ep != null) { const dk = Math.abs(r.conso_5_usages_par_m2_ep - d.kwh), elec = /lectri/i.test(r.type_energie_principale_chauffage || ''), dk23 = Math.abs(r.conso_5_usages_par_m2_ep * 2.3 / 1.9 - d.kwh);
+        if (dk <= 0.6) { s += 2; why.push('mêmes kWh'); } else if (elec && dk23 <= 2.5) { s += 2; why.push('mêmes kWh (électricité recalculée 2026)'); } else if (dk <= 2) { s += 1; why.push('kWh proches'); } else if (dk > 15) s -= 1; }
       if (d.ges != null && r.emission_ges_5_usages_par_m2 != null && Math.abs(r.emission_ges_5_usages_par_m2 - d.ges) <= 0.6) { s += 2; why.push('même GES'); }
       if (d.cmin && d.cmax && r.cout_total_5_usages >= d.cmin - 1 && r.cout_total_5_usages <= d.cmax + 1) { s += 1; why.push('coût dans la fourchette'); }
       const ratio = (A.surface && r.surface_habitable_logement) ? r.surface_habitable_logement / A.surface : null;
@@ -118,7 +157,7 @@ async function collect(input, onStep) {
     adresse.candidats = cands.slice(0, 8);
     const top = cands[0], second = cands[1];
     if (top && top.score >= 5) {
-      adresse.trouvee = true; adresse.dpe = top;
+      adresse.trouvee = true; adresse.dpe = top; adresse.raw = got[top.id] || null;
       adresse.certitude = (top.score >= 8 && (!second || second.score <= top.score - 3)) ? 'élevée' : (top.score >= 6 && (!second || second.score <= top.score - 2)) ? 'moyenne' : 'faible';
       adresse.distBlur = top.d; lat0 = top.lat; lon0 = top.lon; if (top.insee) insee = top.insee;
     }
@@ -135,13 +174,13 @@ async function collect(input, onStep) {
   const tasks = [];
 
   /* Parcelles */
-  tasks.push(step('Parcelles', async () => {
+  const pParcelles = step('Parcelles', async () => {
     const pt = await j('https://apicarto.ign.fr/api/cadastre/parcelle?geom=' + encodeURIComponent(JSON.stringify({type: 'Point', coordinates: [lon0, lat0]})));
     const f0 = pt.features[0];
     if (f0) P.parcelle = {id: f0.properties.idu, sec: f0.properties.section, num: f0.properties.numero, m2: f0.properties.contenance, insee: f0.properties.code_insee, g: geomRings(f0.geometry).map(poly => ring2off(poly[0]))};
     const box = await j('https://apicarto.ign.fr/api/cadastre/parcelle?_limit=1000&geom=' + encodeURIComponent(JSON.stringify(boxGeom(260))));
     P.carte.parcels = box.features.slice(0, 800).map(f => ({id: f.properties.idu, sec: f.properties.section, num: f.properties.numero, m2: f.properties.contenance, g: geomRings(f.geometry).map(poly => ring2off(poly[0]))}));
-  }));
+  }); tasks.push(pParcelles);
 
   /* Ventes : DVF Etalab (adresses, pièces, coordonnées), repli Cerema DVF+ */
   const finirVentes = (sales, source) => {
@@ -220,11 +259,18 @@ async function collect(input, onStep) {
           r.numero_etage_appartement == null ? -1 : r.numero_etage_appartement, txt(r.nom_residence, 40), txt(r.complement_adresse_logement, 60), ({'É': 'E', 'E': 'E', 'G': 'G', 'F': 'F', 'B': 'B', 'R': 'R', 'P': 'P', 'C': 'C'})[(r.type_energie_principale_chauffage || '?')[0]] || '?',
           Math.round(r.cout_total_5_usages) || 0, r.numero_dpe || '', o[0], o[1], r.numero_immatriculation_copropriete || '', Math.round(r.conso_5_usages_par_m2_ep) || 0]; });
     const parcelDpe = dpe.filter(r => adresse.dpe && r._geo_distance != null && r._geo_distance < 60).length;
-    P.dpe = {DC, nDpe: dpe.length, last: lastDpe, since, L, pres: parcelDpe};
+    const today = new Date().toISOString().slice(0, 10), coefs = coefsOf(dpe, today);
+    // étiquette au 1er janvier 2027 (électricité à 1,7) pour la liste : index 16 = nxt, 17 = orig, 18 = q (1 si recalcul impossible)
+    const byId = {}; dpe.forEach(r => { if (r.numero_dpe) byId[r.numero_dpe] = r; });
+    L.forEach(row => { const r = byId[row[11]]; const lab = r ? labelsOf(r, coefs) : null; row.push(lab ? lab.nxt || '' : '', lab ? lab.orig || '' : '', lab && lab.q ? 1 : 0); });
+    const gain27 = L.filter(row => row[16] && row[4] && row[16] < row[4] && !row[18]).length;
+    P.dpe = {DC, nDpe: dpe.length, last: lastDpe, since, L, pres: parcelDpe, coefs, gain27};
+    if (adresse.dpe) { const r = byId[adresse.dpe.id] || adresse.raw; if (r) adresse.dpe.lab = labelsOf(r, coefs); }
+    delete adresse.raw;
     // dossier d'adresse : les DPE de l'adresse elle-même
     if (A.mode === 'adresse' && centre.adr) { const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim(); const a0 = norm(centre.adr); const num = (a0.match(/^(\d+)/) || [])[1]; const w = a0.replace(/^\d+\s*(bis|ter)?\s*/, '').split(' ').filter(x => x.length > 3)[0];
       const selfD = dpe.filter(r => { const ab = norm(r.adresse_ban); return (r._geo_distance == null || r._geo_distance < 40) && (!num || ab.startsWith(num + ' ')) && (!w || ab.includes(w)); }).sort((x, y) => x.date_etablissement_dpe < y.date_etablissement_dpe ? 1 : -1);
-      P.self = P.self || {}; P.self.dpe = selfD.slice(0, 8).map(r => ({date: r.date_etablissement_dpe, l: r.etiquette_dpe, kwh: r.conso_5_usages_par_m2_ep, ges: r.emission_ges_5_usages_par_m2, surface: r.surface_habitable_logement, type: r.type_batiment, energie: r.type_energie_principale_chauffage, etage: r.numero_etage_appartement, annee: r.annee_construction, cout: r.cout_total_5_usages, copro: r.numero_immatriculation_copropriete || null}));
+      P.self = P.self || {}; P.self.dpe = selfD.slice(0, 8).map(r => ({id: r.numero_dpe, lab: labelsOf(r, coefs), date: r.date_etablissement_dpe, l: r.etiquette_dpe, kwh: r.conso_5_usages_par_m2_ep, ges: r.emission_ges_5_usages_par_m2, surface: r.surface_habitable_logement, type: r.type_batiment, energie: r.type_energie_principale_chauffage, etage: r.numero_etage_appartement, annee: r.annee_construction, cout: r.cout_total_5_usages, copro: r.numero_immatriculation_copropriete || null}));
       const maisons = P.self.dpe.filter(x => x.type === 'maison' && x.surface > 20);
       if (P.self.dpe.length && P.self.dpe.every(x => x.type !== 'appartement') && maisons.length) { A.type = 'M'; A.surface = maisons[0].surface; A.indicatif = true; A.pieces = null; }
       else if (P.self.dpe.length === 1 && P.self.dpe[0].type === 'appartement') { A.type = 'A'; A.surface = P.self.dpe[0].surface; A.etage = P.self.dpe[0].etage; A.indicatif = true; } }
@@ -249,6 +295,31 @@ async function collect(input, onStep) {
     P.copros = data.filter(c => c.latitude || c.numero_immatriculation === imS).map(c => { const o = c.latitude ? off(+c.latitude, +c.longitude) : [0, 0];
       return [c.numero_immatriculation, txt(c.nom_usage_copropriete, 40), adr(c.numero_voie_adresse || c.adresse_reference), +c.nombre_lots_habitation || 0, +c.nombre_total_lots || 0, txt(per(c.periode_construction), 16), c.type_syndic || '', txt(c.raison_sociale_representant_legal, 36), c.mandat_en_cours === 'Mandat en cours' ? 1 : 0, c.date_fin_dernier_mandat || '', o[0], o[1], c.numero_immatriculation === imS ? 1 : 0, c.date_immatriculation || '']; })
       .sort((a, b) => (b[12] - a[12]) || (Math.hypot(a[10], a[11]) - Math.hypot(b[10], b[11]))).slice(0, 60);
+  }));
+
+  /* Permis de construire créant des logements (Sitadel, 3 ans), même méthode que Mon secteur (docs/DONNEES.md §7) : jamais de nom de particulier */
+  tasks.push(step('Permis de construire', async () => {
+    await pParcelles;
+    const from = (new Date().getFullYear() - 3) + '-01-01';
+    const base = `https://tabular-api.data.gouv.fr/api/resources/65a9e264-7a20-46a9-9d98-66becb817bc3/data/?COMM__exact=${insee}&DATE_REELLE_AUTORISATION__greater=${from}&page_size=200`;
+    let rows = [], u = base, pages = 0;
+    while (u && pages < 4) { const r = await j(u, null, 20000); rows = rows.concat(r.data || []); u = r.links && r.links.next; pages++; }
+    const ok = rows.filter(r => +r.ETAT_DAU !== 4 && +(r.NB_LGT_TOT_CREES || 0) > 0 && r.SEC_CADASTRE1 && r.NUM_CADASTRE1);
+    // parcelles déjà chargées (autour du bien) : position directe ; sinon, API Carto pour 12 au plus, les plus récentes d'abord
+    const bySec = {}; (P.carte.parcels || []).forEach(p => { if (p.sec && p.num && p.g && p.g[0] && p.g[0].length) { const ring = p.g[0]; bySec[p.sec + '|' + (+p.num)] = [Math.round(ring.reduce((s, q) => s + q[0], 0) / ring.length), Math.round(ring.reduce((s, q) => s + q[1], 0) / ring.length)]; } });
+    const secs = new Set((P.carte.parcels || []).map(p => p.sec));
+    const cand = ok.filter(r => secs.has(r.SEC_CADASTRE1)).sort((a, b) => (b.DATE_REELLE_AUTORISATION || '').localeCompare(a.DATE_REELLE_AUTORISATION || ''));
+    const out = []; let toGeo = [];
+    for (const r of cand) { const k = r.SEC_CADASTRE1 + '|' + (+r.NUM_CADASTRE1); if (bySec[k]) out.push({r, o: bySec[k]}); else toGeo.push(r); }
+    toGeo = toGeo.slice(0, 12);
+    await Promise.all(toGeo.map(async r => { try { const g = await j(`https://apicarto.ign.fr/api/cadastre/parcelle?code_insee=${insee}&section=${encodeURIComponent(r.SEC_CADASTRE1)}&numero=${String(+r.NUM_CADASTRE1).padStart(4, '0')}`, null, 12000, false); const f = g.features && g.features[0]; if (!f) return;
+      const rings = geomRings(f.geometry); const ring = rings[0] && rings[0][0]; if (!ring) return; const la = ring.reduce((s, q) => s + q[1], 0) / ring.length, lo = ring.reduce((s, q) => s + q[0], 0) / ring.length; out.push({r, o: off(la, lo)}); } catch (e) {} }));
+    const soc = /\b(SARL|SAS|SASU|SCI|SCCV|SA|EURL|SNC|SELARL|GROUPE|PROMOTION|IMMOBILI|CONSTRUCT|HABITAT|FONCI|OFFICE|OPH|LOGEMENT|COMMUNE|VILLE|M[ÉE]TROPOLE|D[ÉE]PARTEMENT|SOCI[ÉE]T[ÉE]|STE|BATI|B[ÂA]TIM|R[ÉE]SIDENCE|AM[ÉE]NAG|INVEST|CAPITAL|HOLDING|PATRIMOINE|COGEDIM|NEXITY|BOUYGUES|VINCI|EIFFAGE|KAUFMAN|ICADE|ALTAREA|PITCH|BNP|AXA|CDC|SEM\b)/i;
+    P.permis = out.filter(x => Math.hypot(x.o[0], x.o[1]) <= 1000).map(x => { const r = x.r; const dem = r.SIREN_DEM && r.DENOM_DEM && soc.test(r.DENOM_DEM) ? txt(r.DENOM_DEM, 50) : (r.SIREN_DEM ? 'une société' : 'un particulier');
+      return {x: x.o[0], y: x.o[1], d: Math.round(Math.hypot(x.o[0], x.o[1])), aut: r.DATE_REELLE_AUTORISATION || null, doc: r.DATE_REELLE_DOC || null, fin: r.DATE_REELLE_DAACT || null, lgt: +r.NB_LGT_TOT_CREES || 0, ind: +r.NB_LGT_IND_CREES || 0, col: +r.NB_LGT_COL_CREES || 0, soc: +r.NB_LGT_PRET_LOC_SOCIAL || 0,
+        surf: +r.SURF_HAB_CREEE || 0, nature: +r.NATURE_PROJET_COMPLETEE || +r.NATURE_PROJET_DECLAREE || 0, dem, adr: txt([r.ADR_NUM_TER, r.ADR_LIBVOIE_TER, r.ADR_LIEUDIT_TER].filter(Boolean).join(' '), 60), parc: r.SEC_CADASTRE1 + ' ' + (+r.NUM_CADASTRE1), id: r.NUM_DAU || null}; })
+      .sort((a, b) => a.d - b.d).slice(0, 40);
+    P.permisTotal = {commune: ok.length, secteur: cand.length};
   }));
 
   /* Risques et urbanisme */
