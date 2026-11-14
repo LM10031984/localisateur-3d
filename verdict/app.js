@@ -140,7 +140,7 @@ async function lancer(input) {
     const P = await VA.collect(input, onStep);
     if (prog) $('#pTitle').textContent = 'Dossier prêt';
     const id = await saveDossier(P);
-    go('d/' + id);
+    if (location.hash === '#d/' + id) route(); else go('d/' + id);
   } catch (e) { console.error(e); if (prog) { $('#pTitle').textContent = 'Arrêt'; $('#pErr').textContent = e.message || String(e); } else toast(e.message || String(e), 5000); }
 }
 

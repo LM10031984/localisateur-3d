@@ -91,7 +91,11 @@ VA.estimer = function (P, adj) {
   // la parcelle et la résidence ne comptent que si l'on sait où est le bien (adresse retrouvée, résidence indiquée, Localisateur, dossier d'adresse)
   const situe = !!(P.adresse && P.adresse.trouvee) || !!A.residence || (P.centre && (P.centre.source === 'conseiller' || P.centre.source === 'localisateur' || P.centre.source === 'ban')) || A.mode === 'adresse';
   const mine = situe ? VA.copros(P).find(c => c.sujet) : null; const resPt = (A.residence || P.centre && P.centre.source === 'conseiller') ? [0, 0] : (mine && (mine.x || mine.y) ? [mine.x, mine.y] : null);
-  all.forEach(r => { r.res = situe && !!((P.parcelle && r.pc === P.parcelle.id) || (resPt && Math.hypot(r.x - resPt[0], r.y - resPt[1]) <= 70)); r.key = keyOf(r); });
+  // la résidence : même parcelle, ou à moins de 120 m du point de la copropriété, ou même voie à moins de 200 m (les grandes résidences s'étalent sur plusieurs parcelles)
+  const normV = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/^\d+\s*(bis|ter)?\s*/, '').replace(/\s+/g, ' ').trim();
+  const voieRes = normV((A.residence && A.residence.adr) || (mine && mine.adr) || (P.adresse && P.adresse.trouvee && P.adresse.dpe && P.adresse.dpe.adr) || '');
+  const voieOk = v => voieRes && v && normV(v) === voieRes;
+  all.forEach(r => { const dRes = resPt ? Math.hypot(r.x - resPt[0], r.y - resPt[1]) : null; r.res = situe && !!((P.parcelle && r.pc === P.parcelle.id) || (dRes != null && dRes <= 120) || (dRes != null && dRes <= 200 && voieOk(r.a))); r.key = keyOf(r); });
   VA.situe = situe;
   const cands = all.filter(r => r.s / S >= 0.55 && r.s / S <= 1.8 && !excl.has(r.key)).map(r => {
     let score = Math.abs(Math.log(r.s / S)) * 3 + r.km / 300 + ageY(r.d) * 0.6;
