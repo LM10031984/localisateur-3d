@@ -187,3 +187,15 @@ ul.adj li .val input{width:84px;text-align:right}
 .lead{font-size:15.5px;line-height:1.5;margin:6px 0 0}
 @media (max-width:700px){.hero-tiles{grid-template-columns:1fr}.hero-tiles .tile .v{font-size:26px}}
 .hero h1{font-size:clamp(22px,2.4vw,30px);line-height:1.12;margin:2px 0 4px}
+/* petit écran : barre haute compacte, sommaire sur une ligne qui défile */
+@media (max-width:700px){
+  .top .in{padding:8px 12px;gap:8px}
+  .brand span{display:none}
+  .nav{order:3;flex:1 0 100%;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .nav::-webkit-scrollbar{display:none}
+  .nav a{white-space:nowrap;padding:5px 9px}
+  .seg button{padding:6px 9px;font-size:12px}
+  .toc{top:84px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:2px;padding:6px 0;-webkit-overflow-scrolling:touch}
+  .toc::-webkit-scrollbar{display:none}
+  .toc a{white-space:nowrap}
+}

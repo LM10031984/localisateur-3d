@@ -121,7 +121,7 @@ VA.estimer = function (P, adj) {
     // base de la valeur : les ventes de surface proche (0,6 à 1,6 fois) si elles sont assez nombreuses, sinon toutes (les petites surfaces se vendent plus cher au m²)
     const prox = rs.filter(c => c.s / S >= 0.6 && c.s / S <= 1.6); const proches = prox.length >= 8; const bRows = proches ? prox : rs; const bv = bRows.map(c => c.pm2r);
     resStats = {n: rs.length, min: v[0], max: v[v.length - 1], med: med(v), p25: pctl(v, 0.25), p75: pctl(v, 0.75), p90: pctl(v, 0.9), rank, below, hauts: rs.slice(-3).reverse(), bas: rs.slice(0, 2),
-      proches, nBase: bRows.length, medBase: med(bv), p10Base: pctl(bv, 0.1), p25Base: pctl(bv, 0.25), p75Base: pctl(bv, 0.75), p90Base: pctl(bv, 0.9), rows: rsAll.slice().sort((a, b) => a.d < b.d ? 1 : -1), nAtyp: rsAll.length - rs.length, since: rs.map(c => c.d).sort()[0]}; } }
+      proches, nBase: bRows.length, medBase: med(bv), p10Base: pctl(bv, 0.1), p25Base: pctl(bv, 0.25), p75Base: pctl(bv, 0.75), p90Base: pctl(bv, 0.9), rows: rsAll.slice().sort((a, b) => (a.atyp - b.atyp) || (a.d < b.d ? 1 : -1)), nAtyp: rsAll.length - rs.length, since: rs.map(c => c.d).sort()[0]}; } }
   // mode résidence : au moins 8 ventes dans la résidence → la valeur part de son m² médian (plus robuste que 5 comparables, qu'une vente atypique peut tirer) ; la fourchette est la sienne
   const resMode = !!(resStats && resStats.nBase >= 8 && situe);
   const basePm2 = resMode ? resStats.medBase : m5;
