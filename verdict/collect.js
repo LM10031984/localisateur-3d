@@ -99,7 +99,7 @@ async function collect(input, onStep) {
     const cands = Object.values(got).map(r => {
       const g = (r._geopoint || '').split(','); const la = +g[0], lo = +g[1];
       let s = 0; const why = [];
-      if (d.date && r.date_etablissement_dpe === d.date) { s += 3; why.push('même date'); }
+      if (d.date && r.date_etablissement_dpe === d.date) { s += 4; why.push('même date'); }
       if (d.kwh != null && r.conso_5_usages_par_m2_ep != null) { const dk = Math.abs(r.conso_5_usages_par_m2_ep - d.kwh); if (dk <= 0.6) { s += 2; why.push('mêmes kWh'); } else if (dk <= 2) { s += 1; why.push('kWh proches'); } else if (dk > 15) s -= 1; }
       if (d.ges != null && r.emission_ges_5_usages_par_m2 != null && Math.abs(r.emission_ges_5_usages_par_m2 - d.ges) <= 0.6) { s += 2; why.push('même GES'); }
       if (d.cmin && d.cmax && r.cout_total_5_usages >= d.cmin - 1 && r.cout_total_5_usages <= d.cmax + 1) { s += 1; why.push('coût dans la fourchette'); }

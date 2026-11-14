@@ -222,7 +222,7 @@ function secCopro(P, ctx) {
   return `<section id="copro" class="sec"><div class="sec-h"><span class="n">06</span><h2>Copropriété</h2><p>Registre national des copropriétés : lots, syndic, fin de mandat. ${mine ? 'La copropriété du bien est identifiée par son DPE.' : ''}</p></div>
     <div class="grid ${mine ? 'g2' : 'g1'}">
       ${mine ? `<div class="card"><span class="kicker">La copropriété du bien</span><h3 style="margin:6px 0 6px">${esc(mine.nom || 'Copropriété')} <span class="mono small muted">${esc(mine.im)}</span></h3><dl class="kv">
-        <dt>Lots</dt><dd>${mine.lotsH} d’habitation sur ${mine.lots}${A.copro && A.copro.lots && A.copro.lots !== mine.lots ? ' (annonce : ' + A.copro.lots + ')' : ''}</dd>
+        <dt>Lots</dt><dd>${mine.lotsH} d’habitation sur ${mine.lots}${A.copro && A.copro.lots && A.copro.lots !== mine.lots ? ' (annonce : ' + A.copro.lots + ')' : ''}${A.copro && A.copro.lots && mine.lots && (A.copro.lots / mine.lots > 1.6 || mine.lots / A.copro.lots > 1.6) ? ' <span class="chip warn">écart avec l’annonce : copropriété à vérifier</span>' : ''}</dd>
         <dt>Construction</dt><dd>${esc(mine.per || '–')}</dd>
         <dt>Syndic</dt><dd>${esc(mine.syndic || mine.typeSyndic || '–')}${mine.mandat ? ' · mandat en cours' : ''}</dd>
         <dt>Fin de mandat</dt><dd class="${finProche(mine.fin) ? 'warn' : ''}">${mine.fin ? dateFr(mine.fin) + (finProche(mine.fin) ? ' · dans moins d’un an : assemblée à venir' : '') : '–'}</dd>
