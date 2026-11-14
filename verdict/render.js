@@ -16,7 +16,7 @@ VA.phraseVerdict = function (P, est) {
   const e = est.ecart; const l = est.libelle.t.toLowerCase(); const on = (est.items || []).filter(a => a.on);
   const resi = est.nRes >= 3; const deja = (est.items || []).filter(a => a.deja && !a.on); const RS = est.resStats; const nomRes = A.residence && A.residence.nom ? ' ' + esc(A.residence.nom) : '';
   const court = s => s.replace(/ \(annonce\)/, '').replace(/^Piscine dans la résidence$/, 'piscine').replace(/^Résidence de standing$/, 'standing').replace(/^Garage ou box$/, 'garage').toLowerCase();
-  const dejaTxt = deja.length ? ` ${deja.map(court).join(', ').replace(/^./, m => m.toUpperCase())} : déjà dans les prix de la résidence.` : '';
+  const dejaTxt = deja.length ? ` ${deja.map(a => court(a.l || '')).join(', ').replace(/^./, m => m.toUpperCase())} : déjà dans les prix de la résidence.` : '';
   let base;
   if (est.resMode) {
     const place = RS.rank >= 90 ? 'au-dessus de toutes les ventes de la résidence' : RS.rank >= 70 ? 'dans le haut de la résidence' : RS.rank >= 35 ? 'au milieu de la résidence' : 'dans le bas de la résidence';
