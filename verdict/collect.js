@@ -109,7 +109,7 @@ async function collect(input, onStep) {
       const rv = await j(`https://api-adresse.data.gouv.fr/reverse/?lon=${lon0}&lat=${lat0}`).catch(() => null);
       const f = rv && rv.features[0];
       insee = A.insee || (f && f.properties.citycode) || null;
-      centre = {source: 'blur', r: A.blur.r, adr: f ? f.properties.name : null, cp: A.cp || (f && f.properties.postcode), ville: A.ville || (f && f.properties.city)};
+      centre = {source: A.adresseConnue && A.adresse ? 'localisateur' : 'blur', r: A.blur.r, adr: A.adresseConnue && A.adresse ? A.adresse.replace(/\s+\d{5}\s.*$/, '') : (f ? f.properties.name : null), cp: A.cp || (f && f.properties.postcode), ville: A.ville || (f && f.properties.city)};
     } else {
       const q = [A.adresse, A.quartier, A.cp, A.ville].filter(Boolean).join(' ');
       const ban = await j('https://api-adresse.data.gouv.fr/search/?limit=1&q=' + encodeURIComponent(q));

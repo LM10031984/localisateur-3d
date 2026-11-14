@@ -160,7 +160,7 @@ routes.d = async (id) => {
   const v = view(`<div id="dossier">${VA.renderDossier(P, ctx)}</div><div class="foot"><span>Verdict annonce · données publiques · ${esc(reglages().conseiller || '')} ${esc(reglages().agence || '')}</span><span><a href="#nouveau">Nouveau dossier</a> · <a href="#dossiers">Mes dossiers</a> · <button class="btn-s" id="delD">Supprimer ce dossier</button></span></div>`);
   VA.wireDossier(v.querySelector('#dossier'), P, ctx);
   $('#delD').addEventListener('click', async () => { if (!confirm('Supprimer ce dossier de ce navigateur ?')) return; await DB.del(id); saveMeta(meta().filter(x => x.id !== id)); toast('Dossier supprimé'); go('dossiers'); });
-  document.title = VA.titreDossier(P) + ' · Verdict annonce';
+  document.title = VA.titreDossier(P) + ' · Dossier du bien';
 };
 
 async function refreshListing(id) {
