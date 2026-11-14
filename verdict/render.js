@@ -200,7 +200,7 @@ function secSoleil(P, est, ctx) {
       </div>
       ${(() => { const pb = VA.parcelleDe(P, bS); if (!pb || !pb.g || !pb.g.length) return ''; const ring = VA.geo.closed(pb.g[0]); const n = (P.carte.bati || []).filter(b => b.h >= 2.8 && VA.geo.inPoly(b.c, ring)).length; return n > 1 ? `<p class="note">La parcelle porte ${n} bâtiments : le calcul vise le plus probable (voir « Bâtiments de la parcelle »), à confirmer sur place.</p>` : ''; })()}
       <p id="sunRead" style="margin:4px 0 2px"></p><p id="sunJ" style="margin:0 0 10px"></p>
-      ${ctx.standalone ? '' : `<div class="row noprint" style="margin:0 0 10px"><button class="btn-s btn-d" data-act="sun3d">Voir en 3D : bâtiments, relief et ombres</button><button class="btn-s" data-act="sunplay">▶ Jouer la journée</button><span class="note" id="sun3dInfo"></span></div><div id="sun3d" class="noprint" style="display:none;margin:0 0 12px;border-radius:10px;overflow:hidden;background:#eaf2fb"></div>`}
+      ${ctx.standalone ? '' : `<div id="sun3d" class="noprint" style="margin:0 0 8px;border-radius:10px;overflow:hidden;background:#eaf2fb;min-height:320px;position:relative"><div id="sun3dWait" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#4c5160;font-size:14px">La 3D se charge (bâtiments, relief, ombres)…</div></div><div class="row noprint" style="margin:0 0 10px"><button class="btn-s" data-act="sun3d">Masquer la 3D</button><button class="btn-s btn-d" data-act="sunplay">▶ Jouer la journée</button><span class="note" id="sun3dInfo">Tournez avec la souris, zoomez à la molette. Le bien est en orange ; le curseur et la saison pilotent le soleil.</span></div>`}
       <div class="tbl"><table><thead><tr><th>Saison</th><th>Lever · coucher</th><th>${A.type === 'A' ? 'Soleil direct sur la façade sud de l’immeuble' + (A.etage > 0 ? ', à l’étage ' + A.etage : '') + ' (si le logement y donne ; hors relief lointain et arbres)' : 'Soleil direct sur la façade sud / terrasse (hors relief lointain et arbres)'}</th></tr></thead><tbody>${rowsTbl}</tbody></table></div>
       <p class="note" style="margin-top:8px">Ombres calculées sur les hauteurs de la BD TOPO, sol plat autour de chaque bâtiment ; la différence d’altitude entre le bien et ses voisins est prise en compte pour la terrasse. Le relief lointain et la végétation ne sont pas mesurés ici. Heures légales (Paris).</p>
     </div></section>`;
@@ -451,16 +451,21 @@ VA.wireDossier = function (root, P, ctx) {
   // vue 3D et animation de la journée
   let playing = null, view3d = null;
   const sun3dBtn = root.querySelector('[data-act="sun3d"]');
-  const open3d = async () => { const box = root.querySelector('#sun3d'); const info = root.querySelector('#sun3dInfo'); if (!box) return; if (view3d) { box.style.display = box.style.display === 'none' ? '' : 'none'; return; }
-    box.style.display = ''; if (info) info.textContent = 'Chargement de la 3D…'; if (sun3dBtn) sun3dBtn.disabled = true;
-    try { if (!VA.sun3d) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'sun3d.js?v=2'; s.onload = res; s.onerror = () => rej(new Error('sun3d.js')); document.head.appendChild(s); });
-      view3d = await VA.sun3d(box, P, S, () => ({season, hour}), () => { if (info) info.textContent = 'Tournez avec la souris, zoomez à la molette. Le bien est en orange ; le curseur et la saison pilotent le soleil.'; });
-      box.scrollIntoView({behavior: 'smooth', block: 'center'}); if (sun3dBtn) { sun3dBtn.disabled = false; sun3dBtn.textContent = 'Masquer / afficher la 3D'; } }
-    catch (e) { console.error(e); if (info) info.textContent = 'La 3D n’a pas pu se charger (' + (e.message || e) + ').'; if (sun3dBtn) sun3dBtn.disabled = false; } };
+  let loading3d = false;
+  const open3d = async (auto) => { const box = root.querySelector('#sun3d'); const info = root.querySelector('#sun3dInfo'); const wait = root.querySelector('#sun3dWait'); if (!box) return;
+    if (view3d) { const hide = box.style.display !== 'none'; box.style.display = hide ? 'none' : ''; if (sun3dBtn) sun3dBtn.textContent = hide ? 'Afficher la 3D' : 'Masquer la 3D'; return; }
+    if (loading3d) return; loading3d = true; box.style.display = ''; if (sun3dBtn) sun3dBtn.disabled = true;
+    try { if (!VA.sun3d) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'sun3d.js?v=2'; s.onload = res; s.onerror = () => rej(new Error('sun3d.js introuvable')); document.head.appendChild(s); });
+      const gl = document.createElement('canvas').getContext('webgl2') || document.createElement('canvas').getContext('webgl'); if (!gl) throw new Error('WebGL désactivé dans ce navigateur');
+      view3d = await VA.sun3d(box, P, S, () => ({season, hour}), () => { if (wait) wait.remove(); if (info) info.textContent = 'Tournez avec la souris, zoomez à la molette. Le bien est en orange ; le curseur et la saison pilotent le soleil.'; });
+      if (!auto) box.scrollIntoView({behavior: 'smooth', block: 'center'}); if (sun3dBtn) { sun3dBtn.disabled = false; sun3dBtn.textContent = 'Masquer la 3D'; } }
+    catch (e) { console.error(e); loading3d = false; box.innerHTML = '<div id="sun3dWait" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#4c5160;font-size:14px;padding:16px;text-align:center"><span>La 3D n’a pas pu se charger : ' + esc(e.message || e) + '. <button type="button" class="btn-s" id="sun3dRetry">Réessayer</button></span></div>'; const rb = root.querySelector('#sun3dRetry'); if (rb) rb.onclick = () => open3d(false); if (info) info.textContent = 'Vérifiez la connexion (three.js est chargé depuis jsdelivr) ou l’accélération graphique de Chrome.'; if (sun3dBtn) sun3dBtn.disabled = false; } };
+  // la 3D se charge d'elle-même quand la section Soleil approche de l'écran (comme Repère Immo : la 3D d'abord)
+  if (sun3dBtn && root.querySelector('#sun3d')) { const sec = root.querySelector('#soleil'); if ('IntersectionObserver' in window && sec) { const io = new IntersectionObserver(es => { if (es.some(x => x.isIntersecting)) { io.disconnect(); open3d(true); } }, {rootMargin: '900px 0px'}); io.observe(sec); } else setTimeout(() => open3d(true), 800); }
   const play = () => { const btn = root.querySelector('[data-act="sunplay"]'); if (playing) { clearInterval(playing); playing = null; if (btn) btn.textContent = '▶ Jouer la journée'; return; }
     const s = S.SEASONS[season]; const p = S.plages(s); let h = (p.lever || 7) - 0.25; const end = (p.coucher || 19) + 0.25; if (btn) btn.textContent = '■ Arrêter';
     playing = setInterval(() => { h += 0.1; if (h > end) h = (p.lever || 7) - 0.25; hour = h; if (slider) slider.value = Math.max(6, Math.min(20, h)); render(); }, 120); };
-  if (sun3dBtn) sun3dBtn.addEventListener('click', open3d);
+  if (sun3dBtn) sun3dBtn.addEventListener('click', () => open3d(false));
   const playBtn = root.querySelector('[data-act="sunplay"]'); if (playBtn) playBtn.addEventListener('click', play);
   // acheteur
   const bT = root.querySelector('#bTiles');
