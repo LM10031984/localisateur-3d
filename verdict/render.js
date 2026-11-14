@@ -12,6 +12,7 @@ VA.titreDossier = P => { const A = P.annonce; if (A.mode === 'adresse') return A
 
 VA.phraseVerdict = function (P, est) {
   const A = P.annonce; if (!est || !est.valeur) return A.mode === 'adresse' ? 'Dossier d’adresse : marché, énergie, risques et signaux autour de cette adresse.' : 'Pas assez de ventes comparables à 800 m pour juger le prix : le dossier reste utile pour l’adresse, les risques et le quartier.';
+  if (A.mode === 'adresse') return `D’après le DPE de l’adresse (${est.type === 'M' ? 'maison' : 'appartement'} de ${fmt(est.S)} m²), cinq ventes comparables recalées à aujourd’hui donnent une valeur indicative de <b>${eur(est.valeur)}</b> ; huit cas sur dix entre ${kE(est.fourchette[0])} et ${kE(est.fourchette[1])}. Un ordre de grandeur avant visite, pas un avis de valeur.`;
   const e = est.ecart; const l = est.libelle.t.toLowerCase();
   return `Affiché ${eur(A.prix)} pour ${fmt(A.surface)} m² (${m2(A.prix / A.surface)}). Cinq ventes comparables, recalées à aujourd’hui, placent la valeur autour de <b>${eur(est.valeur)}</b> : l’annonce est <b>${l}</b> (${pct(e)}). Huit cas sur dix se vendraient entre ${kE(est.fourchette[0])} et ${kE(est.fourchette[1])}.`;
 };
@@ -29,7 +30,14 @@ function secHero(P, est, ctx) {
   const adrLine = adr && adr.trouvee ? `<div class="row" style="gap:8px"><span class="chip ${adr.certitude === 'élevée' ? 'ok' : adr.certitude === 'moyenne' ? 'acc' : 'warn'}">Adresse retrouvée · certitude ${adr.certitude}</span><b class="num-adr" style="font-size:16px">${esc(niceAdr(adr.dpe.adr))}</b></div>`
     : A.mode === 'adresse' ? `<div class="row"><span class="chip acc">Dossier d’adresse</span><b style="font-size:16px">${esc(P.centre.label || A.q)}</b></div>`
     : `<div class="row"><span class="chip">Adresse non retrouvée</span><span class="muted">${A.quartier ? esc(A.quartier) + ' · ' : ''}${esc(A.cp || '')} ${esc(A.ville || '')} · dossier au niveau du quartier${P.adresse && P.adresse.candidats && P.adresse.candidats.length ? ' · ' + P.adresse.candidats.length + ' DPE candidats' : ''}</span></div>`;
-  const tiles = est && est.valeur ? `
+  const self = P.self || {}; const lastSale = self.ventes && self.ventes[0]; const selfDpe = self.dpe && self.dpe[0];
+  const tiles = A.mode === 'adresse' && est && est.valeur ? `
+    <div class="tiles">
+      <div class="tile acc"><span class="k">Valeur indicative</span><span class="v">${eur(est.valeur)}</span><span class="s mono">${est.type === 'M' ? 'maison' : 'appartement'} de ${fmt(est.S)} m² au DPE · ${m2(est.m5)}</span></div>
+      <div class="tile"><span class="k">8 cas sur 10</span><span class="v">${kE(est.fourchette[0])} – ${kE(est.fourchette[1])}</span><span class="s">fiabilité ${est.fiab} · ${est.n} ventes du type à 800 m</span></div>
+      <div class="tile"><span class="k">Dernière vente de l’adresse</span><span class="v">${lastSale ? kE(lastSale.p) : '–'}</span><span class="s">${lastSale ? monthFr(lastSale.d) + ' · ' + (lastSale.t === 'M' ? 'maison' : 'appt') + ' ' + fmt(lastSale.s) + ' m² · ' + m2(lastSale.p / lastSale.s) : 'aucune depuis ' + (P.marche && P.marche.years[0])}</span></div>
+      <div class="tile"><span class="k">DPE de l’adresse</span><span class="v">${selfDpe ? selfDpe.l : '–'}</span><span class="s">${selfDpe ? dateFr(selfDpe.date) + ' · ' + fr1(selfDpe.kwh) + ' kWh · ' + fmt(selfDpe.surface) + ' m²' + (self.dpe.length > 1 ? ' · ' + self.dpe.length + ' DPE à l’adresse' : '') : 'aucun DPE trouvé à l’adresse'}</span></div>
+    </div>` : est && est.valeur ? `
     <div class="tiles">
       <div class="tile"><span class="k">Prix affiché</span><span class="v">${eur(A.prix)}</span><span class="s mono">${m2(A.prix / A.surface)}${A.pieces ? ' · ' + A.pieces + ' pièces' : ''}</span></div>
       <div class="tile ${est.libelle.c}"><span class="k">Verdict</span><span class="v">${est.libelle.t}</span><span class="s mono">${pct(est.ecart)} vs les 5 comparables</span></div>
@@ -37,10 +45,10 @@ function secHero(P, est, ctx) {
       <div class="tile"><span class="k">Fiabilité</span><span class="v">${est.fiab}</span><span class="s">${est.top5.length} comparables · ${est.n} ventes du type à 800 m · dispersion ${fr1((est.cv || 0) * 100)} %</span></div>
     </div>` : A.mode === 'adresse' ? `
     <div class="tiles">
-      <div class="tile"><span class="k">Ventes à 800 m</span><span class="v">${fmt(P.marche && P.marche.n800)}</span><span class="s">depuis ${P.marche && P.marche.years[0]} · dernière ${monthFr(P.marche && P.marche.dvfLast)}</span></div>
-      <div class="tile"><span class="k">Médiane appartements</span><span class="v">${P.marche && P.marche.allMed.A ? m2(P.marche.allMed.A) : '–'}</span><span class="s">toutes années, à 800 m</span></div>
-      <div class="tile"><span class="k">Médiane maisons</span><span class="v">${P.marche && P.marche.allMed.M ? m2(P.marche.allMed.M) : '–'}</span><span class="s">toutes années, à 800 m</span></div>
-      <div class="tile"><span class="k">DPE à 300 m</span><span class="v">${fmt(P.dpe && P.dpe.nDpe)}</span><span class="s">${P.dpe ? (P.dpe.DC.E + P.dpe.DC.F + P.dpe.DC.G) + ' en E-F-G' : ''}</span></div>
+      <div class="tile"><span class="k">Dernière vente de l’adresse</span><span class="v">${lastSale ? kE(lastSale.p) : '–'}</span><span class="s">${lastSale ? monthFr(lastSale.d) + ' · ' + (lastSale.t === 'M' ? 'maison' : 'appt') + ' ' + fmt(lastSale.s) + ' m² · ' + m2(lastSale.p / lastSale.s) : 'aucune depuis ' + (P.marche && P.marche.years[0])}</span></div>
+      <div class="tile"><span class="k">DPE de l’adresse</span><span class="v">${selfDpe ? selfDpe.l : '–'}</span><span class="s">${selfDpe ? dateFr(selfDpe.date) + ' · ' + fr1(selfDpe.kwh) + ' kWh · ' + fmt(selfDpe.surface) + ' m²' + (self.dpe.length > 1 ? ' · ' + self.dpe.length + ' DPE à l’adresse' : '') : 'aucun DPE trouvé à l’adresse'}</span></div>
+      <div class="tile"><span class="k">Médiane appartements</span><span class="v">${P.marche && P.marche.allMed.A ? m2(P.marche.allMed.A) : '–'}</span><span class="s">${fmt(P.marche && P.marche.n800)} ventes à 800 m depuis ${P.marche && P.marche.years[0]}</span></div>
+      <div class="tile"><span class="k">Médiane maisons</span><span class="v">${P.marche && P.marche.allMed.M ? m2(P.marche.allMed.M) : '–'}</span><span class="s">${P.dpe ? (P.dpe.DC.E + P.dpe.DC.F + P.dpe.DC.G) + ' passoires E-F-G sur ' + P.dpe.nDpe + ' DPE à 300 m' : ''}</span></div>
     </div>` : `
     <div class="tiles">
       <div class="tile"><span class="k">Prix affiché</span><span class="v">${eur(A.prix)}</span><span class="s mono">${A.surface ? m2(A.prix / A.surface) : ''}</span></div>
@@ -128,7 +136,8 @@ function secOu(P, est, ctx) {
 
 function secPrix(P, est, ctx) {
   const A = P.annonce;
-  if (!est) return `<section id="prix" class="sec"><div class="sec-h"><span class="n">02</span><h2>Le prix</h2><p>Aucune vente exploitable à 800 m.</p></div></section>`;
+  if (!est || !est.top5) return `<section id="prix" class="sec"><div class="sec-h"><span class="n">02</span><h2>Le prix</h2><p>${A.mode === 'adresse' ? 'Marché du secteur : médianes annuelles à 800 m. Pour une estimation, il faut un logement précis (surface et type) : saisissez-le à la main ou partez d’une annonce.' : 'Aucune vente exploitable à 800 m.'}</p></div>${P.marche && P.marche.years && P.marche.years.length ? `<div class="grid g2"><div class="card"><div class="sec-h"><h3>Médianes annuelles à 800 m · appartements</h3></div>${VA.chartMedianes(P, {type: 'A', lastYear: Math.max(...P.marche.years)})}</div><div class="card"><div class="sec-h"><h3>Médianes annuelles à 800 m · maisons</h3></div>${VA.chartMedianes(P, {type: 'M', lastYear: Math.max(...P.marche.years)})}</div></div>` : ''}</section>`;
+  if (!est.valeur) return `<section id="prix" class="sec"><div class="sec-h"><span class="n">02</span><h2>Le prix</h2><p>Pas assez de ventes comparables (${est.n} du type à 800 m) pour une valeur fiable.</p></div><div class="card">${VA.chartMedianes(P, est)}</div></section>`;
   const comp = (c, i, hl) => `<tr class="${hl ? 'hl' : ''}"><td>${hl ? `<span class="badge" style="background:#2F44CE">${i + 1}</span>` : '<span class="muted mono">' + (i + 1) + '</span>'}</td><td class="num-adr">${c.a ? esc(niceAdr(c.a)) : '<span class="muted">adresse non publiée</span>'}${c.pc && P.parcelle && c.pc === P.parcelle.id ? ' <span class="chip bien">même parcelle</span>' : ''}</td><td class="mono">${monthFr(c.d)}</td><td class="r mono">${fmt(c.s)} m²${c.n ? '<br><span class="muted">' + c.n + ' p.</span>' : ''}</td>${est.type === 'M' ? `<td class="r mono">${c.g ? fmt(c.g) + ' m²' : '–'}</td>` : ''}<td class="r mono">${kE(c.pk * 1000)}</td><td class="r mono">${m2(c.pm2)}</td><td class="r mono"><b>${m2(c.pm2r)}</b>${c.f !== 1 ? '<br><span class="muted">×' + fr1(c.f) + '</span>' : ''}</td><td class="r mono">${c.km} m</td></tr>`;
   const head = `<thead><tr><th></th><th>Vente</th><th>Date</th><th class="r">Surface</th>${est.type === 'M' ? '<th class="r">Terrain</th>' : ''}<th class="r">Prix</th><th class="r">€/m²</th><th class="r">€/m² recalé</th><th class="r">Dist.</th></tr></thead>`;
   const adj = ctx.adj || [];

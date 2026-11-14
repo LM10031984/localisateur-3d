@@ -226,7 +226,7 @@ VA.chartMedianes = function (P, est) {
   return `<div class="chart">${s}</div><div class="legend"><span><i style="background:#aab0c0"></i>${type === 'M' ? 'Maisons' : 'Appartements'} : médiane €/m² à 800 m (≥ 5 ventes)</span><span><i style="background:#E8641B"></i>${other === 'M' ? 'Maisons' : 'Appartements'} (repère)</span></div>`;
 };
 VA.chartNuage = function (P, est) {
-  if (!est || !est.all.length) return '';
+  if (!est || !est.all || !est.all.length) return '';
   const pts = est.all; const A = P.annonce;
   const xs = pts.map(p => p.s).concat(A.surface ? [A.surface] : []); const ys = pts.map(p => p.pm2r).concat(A.prix && A.surface ? [A.prix / A.surface] : []);
   const W = 620, H = 260, pl = 54, pr = 14, pt = 14, pb = 32;

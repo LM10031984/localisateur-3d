@@ -151,6 +151,8 @@ async function collect(input, onStep) {
     const byDate = (a, b) => a.d < b.d ? 1 : -1;
     const near = sales.filter(x => x.km <= R300).sort(byDate).slice(0, 250);
     const far = sales.filter(x => x.km > R300).sort(byDate).slice(0, 400);
+    if (A.mode === 'adresse' && centre.adr) { const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim(); const a0 = norm(centre.adr); const num = (a0.match(/^(\d+)/) || [])[1]; const w = a0.replace(/^\d+\s*(bis|ter)?\s*/, '').split(' ').filter(x => x.length > 3)[0];
+      P.self = P.self || {}; P.self.ventes = sales.filter(x => x.km <= 60 && x.a && (!num || norm(x.a).startsWith(num + ' ')) && (!w || norm(x.a).includes(w))).sort((x, y) => x.d < y.d ? 1 : -1).slice(0, 6).map(x => ({d: x.d, p: x.p, t: x.t, s: x.s, n: x.n, g: x.g})); }
     P.marche = {source, years, MED, CNT, n800: sales.length, n300: near.length, dvfLast: sales.map(x => x.d).sort().pop() || null,
       ventes: near.concat(far).map(x => [x.o[0], x.o[1], x.t, Math.round(x.p / 1000), Math.round(x.s), x.n || 0, x.d, x.t == 'M' ? x.g : 0, (x.a || '').replace(/[;,]/g, ' '), x.km, x.pc || '', x.nl || 1]),
       allMed: {A: med(sales.filter(x => x.t == 'A').map(x => x.p / x.s)), M: med(sales.filter(x => x.t == 'M').map(x => x.p / x.s))}};
@@ -219,6 +221,13 @@ async function collect(input, onStep) {
           Math.round(r.cout_total_5_usages) || 0, r.numero_dpe || '', o[0], o[1], r.numero_immatriculation_copropriete || '', Math.round(r.conso_5_usages_par_m2_ep) || 0]; });
     const parcelDpe = dpe.filter(r => adresse.dpe && r._geo_distance != null && r._geo_distance < 60).length;
     P.dpe = {DC, nDpe: dpe.length, last: lastDpe, since, L, pres: parcelDpe};
+    // dossier d'adresse : les DPE de l'adresse elle-même
+    if (A.mode === 'adresse' && centre.adr) { const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim(); const a0 = norm(centre.adr); const num = (a0.match(/^(\d+)/) || [])[1]; const w = a0.replace(/^\d+\s*(bis|ter)?\s*/, '').split(' ').filter(x => x.length > 3)[0];
+      const selfD = dpe.filter(r => { const ab = norm(r.adresse_ban); return (r._geo_distance == null || r._geo_distance < 40) && (!num || ab.startsWith(num + ' ')) && (!w || ab.includes(w)); }).sort((x, y) => x.date_etablissement_dpe < y.date_etablissement_dpe ? 1 : -1);
+      P.self = P.self || {}; P.self.dpe = selfD.slice(0, 8).map(r => ({date: r.date_etablissement_dpe, l: r.etiquette_dpe, kwh: r.conso_5_usages_par_m2_ep, ges: r.emission_ges_5_usages_par_m2, surface: r.surface_habitable_logement, type: r.type_batiment, energie: r.type_energie_principale_chauffage, etage: r.numero_etage_appartement, annee: r.annee_construction, cout: r.cout_total_5_usages, copro: r.numero_immatriculation_copropriete || null}));
+      const maisons = P.self.dpe.filter(x => x.type === 'maison' && x.surface > 20);
+      if (P.self.dpe.length && P.self.dpe.every(x => x.type !== 'appartement') && maisons.length) { A.type = 'M'; A.surface = maisons[0].surface; A.indicatif = true; A.pieces = null; }
+      else if (P.self.dpe.length === 1 && P.self.dpe[0].type === 'appartement') { A.type = 'A'; A.surface = P.self.dpe[0].surface; A.etage = P.self.dpe[0].etage; A.indicatif = true; } }
   }));
 
   /* Copropriétés */
