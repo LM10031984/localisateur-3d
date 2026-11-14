@@ -118,9 +118,12 @@ VA.estimer = function (P, adj) {
   const fiab = (top5.length === 5 && cv != null && cv < 0.15 && top5[4].score < 2.4) ? 'bonne' : (top5.length >= 4 && cv != null && cv < 0.28) ? 'moyenne' : 'faible';
   // atouts annoncés (automatiques, corrigeables) + ajustements du conseiller ; exclusions à part
   const nRes = top5.filter(c => c.res).length;
+  // la résidence vue en entier : toutes ses ventes du type, et la place de l'annonce parmi elles (étage, vue et état font l'écart à l'intérieur d'une même résidence)
+  let resStats = null; { const rs = all.filter(c => c.res && !excl.has(c.key)).sort((a, b) => a.pm2r - b.pm2r); if (rs.length >= 3) { const v = rs.map(c => c.pm2r); const pm2A = A.prix && S ? A.prix / S : null;
+    const rank = pm2A ? Math.round(100 * v.filter(x => x <= pm2A).length / v.length) : null; resStats = {n: rs.length, min: v[0], max: v[v.length - 1], med: med(v), p25: pctl(v, 0.25), p75: pctl(v, 0.75), rank, hauts: rs.slice(-3).reverse(), bas: rs.slice(0, 2)}; } }
   const autoA = VA.atouts(P); const byK = {}; adjArr.forEach(a => { if (a.k) byK[a.k] = a; });
   // quand les comparables viennent de la résidence elle-même, ses atouts collectifs (piscine, standing, vue) sont déjà dans leurs prix
-  const dejaRes = nRes >= 3 ? ['piscine', 'standing', 'mer', 'terrasse', 'garage', 'cave'] : []; // dans une résidence, terrasses et garages se vendent avec : ils sont déjà dans les prix
+  const dejaRes = nRes >= 3 ? ['piscine', 'standing'] : []; // piscine et standing sont ceux de la résidence : déjà dans ses prix ; vue, étage, terrasse, état, garage restent propres au logement
   const items = autoA.map(a => { const o = byK[a.k]; const deja = dejaRes.includes(a.k); return Object.assign({}, a, {deja}, o ? {on: o.on !== false, p: o.p != null ? +o.p : a.p, e: o.e != null ? +o.e : a.e} : {on: !deja}); })
     .concat(adjArr.filter(a => !a.k).map(a => ({k: null, l: a.l, p: +a.p || 0, e: +a.e || 0, on: a.on !== false, auto: false})));
   const onItems = items.filter(a => a.on);
@@ -142,7 +145,7 @@ VA.estimer = function (P, adj) {
   const ecart8 = (A.prix && m8) ? A.prix / (m8 * S) - 1 : null;
   const lib = e => e == null ? {t: 'Pas assez de ventes', c: 'muted'} : e <= -0.08 ? {t: 'Sous le marché', c: 'ok'} : e <= 0.05 ? {t: 'Dans le marché', c: 'acc'} : e <= 0.12 ? {t: 'Un peu au-dessus', c: 'warn'} : {t: 'Au-dessus du marché', c: 'bad'};
   return {type, S, T, lastYear, ref, fac, slope, all, cands, ecartes, top5, top8, m5, m8, valeur, valeurAj, lo, hi, fourchette: valeur ? [Math.round(valeur * lo / 1000) * 1000, Math.round(valeur * hi / 1000) * 1000] : null,
-    cv, fiab, tot, totE, totAuto, totMan, capAuto, near90, items, atouts: items.filter(a => a.auto), nRes, situe, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
+    cv, fiab, tot, totE, totAuto, totMan, capAuto, near90, items, atouts: items.filter(a => a.auto), nRes, resStats, situe, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
 };
 
 /* ---------- géométrie ---------- */
