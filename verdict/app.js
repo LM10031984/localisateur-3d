@@ -128,7 +128,7 @@ routes.favori = async () => {
   $('#cpF').onclick = () => { if (!h) return toast('Favori indisponible (favori.min.js non chargé).', 4000); navigator.clipboard.writeText(h).then(() => toast('Favori copié : clic droit sur la barre de favoris → Ajouter une page → collez dans URL.', 6000)); };
 };
 function cardDossier(x) {
-  const c = x.verdict === 'Sous le marché' ? 'ok' : x.verdict === 'Dans le marché' ? 'acc' : x.verdict === 'Un peu au-dessus' ? 'warn' : x.verdict ? 'bad' : '';
+  const c = (x.verdict === 'Sous le marché' || x.verdict === 'Bien placé') ? 'ok' : x.verdict === 'Dans le marché' ? 'acc' : x.verdict === 'Un peu au-dessus' ? 'warn' : x.verdict ? 'bad' : '';
   return `<a class="card dcard" href="#d/${esc(x.id)}"><div class="row sp"><span class="chip ${c}">${esc(x.verdict || (x.mode === 'adresse' ? 'Dossier d’adresse' : 'sans verdict'))}</span><span class="tag">${dateFr(x.date)}</span></div><span class="t">${esc(x.titre)}</span><span class="small muted num-adr">${x.adr ? esc(niceAdr(x.adr)) + ' · ' + esc(x.certitude) : esc(x.ville || '')}</span>${x.prix ? `<span class="small mono">${eur(x.prix)}${x.valeur ? ' · valeur ' + kE(x.valeur) + ' · ' + pct(x.ecart) : ''}</span>` : ''}</a>`;
 }
 

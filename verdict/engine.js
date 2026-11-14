@@ -112,12 +112,15 @@ VA.estimer = function (P, adj) {
   const m5 = med(top5.map(c => c.pm2r)), m8 = med(top8.map(c => c.pm2r));
   const nRes = top5.filter(c => c.res).length;
   // la résidence vue en entier : toutes ses ventes du type et la place de l'annonce parmi elles (étage, vue et état font l'écart à l'intérieur d'une même résidence)
-  let resStats = null; { const rs = all.filter(c => c.res && !excl.has(c.key)).sort((a, b) => a.pm2r - b.pm2r); if (rs.length >= 3) { const v = rs.map(c => c.pm2r); const pm2A = A.prix && S ? A.prix / S : null;
+  let resStats = null; { const rsAll = all.filter(c => c.res && !excl.has(c.key)).sort((a, b) => a.pm2r - b.pm2r); const mAll = med(rsAll.map(c => c.pm2r));
+    // ventes atypiques de la résidence (vente à un occupant, viager, lot de garages, succession) : hors 55 %–160 % du m² médian de la résidence, montrées mais pas comptées
+    rsAll.forEach(c => { c.atyp = mAll ? (c.pm2r < mAll * 0.55 || c.pm2r > mAll * 1.6) : false; });
+    const rs = rsAll.filter(c => !c.atyp); if (rs.length >= 3) { const v = rs.map(c => c.pm2r); const pm2A = A.prix && S ? A.prix / S : null;
     const below = pm2A ? v.filter(x => x <= pm2A).length : null; const rank = pm2A ? Math.round(100 * below / v.length) : null;
     // base de la valeur : les ventes de surface proche (0,6 à 1,6 fois) si elles sont assez nombreuses, sinon toutes (les petites surfaces se vendent plus cher au m²)
     const prox = rs.filter(c => c.s / S >= 0.6 && c.s / S <= 1.6); const proches = prox.length >= 8; const bRows = proches ? prox : rs; const bv = bRows.map(c => c.pm2r);
     resStats = {n: rs.length, min: v[0], max: v[v.length - 1], med: med(v), p25: pctl(v, 0.25), p75: pctl(v, 0.75), p90: pctl(v, 0.9), rank, below, hauts: rs.slice(-3).reverse(), bas: rs.slice(0, 2),
-      proches, nBase: bRows.length, medBase: med(bv), p10Base: pctl(bv, 0.1), p25Base: pctl(bv, 0.25), p75Base: pctl(bv, 0.75), p90Base: pctl(bv, 0.9), rows: rs.slice().sort((a, b) => a.d < b.d ? 1 : -1), since: rs.map(c => c.d).sort()[0]}; } }
+      proches, nBase: bRows.length, medBase: med(bv), p10Base: pctl(bv, 0.1), p25Base: pctl(bv, 0.25), p75Base: pctl(bv, 0.75), p90Base: pctl(bv, 0.9), rows: rsAll.slice().sort((a, b) => a.d < b.d ? 1 : -1), nAtyp: rsAll.length - rs.length, since: rs.map(c => c.d).sort()[0]}; } }
   // mode résidence : au moins 8 ventes dans la résidence → la valeur part de son m² médian (plus robuste que 5 comparables, qu'une vente atypique peut tirer) ; la fourchette est la sienne
   const resMode = !!(resStats && resStats.nBase >= 8 && situe);
   const basePm2 = resMode ? resStats.medBase : m5;
@@ -155,7 +158,8 @@ VA.estimer = function (P, adj) {
   const ecart = (A.prix && valeur) ? A.prix / valeur - 1 : null;
   const ecartAj = (A.prix && valeurAj) ? A.prix / valeurAj - 1 : null;
   const ecart8 = (A.prix && m8) ? A.prix / (m8 * S) - 1 : null;
-  const lib = e => e == null ? {t: 'Pas assez de ventes', c: 'muted'} : e <= -0.08 ? {t: 'Sous le marché', c: 'ok'} : e <= 0.05 ? {t: 'Dans le marché', c: 'acc'} : e <= 0.12 ? {t: 'Un peu au-dessus', c: 'warn'} : {t: 'Au-dessus du marché', c: 'bad'};
+  // cinq niveaux : sous le marché (≤ −12 %), bien placé (−12 à −4 %), dans le marché (−4 à +5 %), un peu au-dessus (+5 à +12 %), au-dessus (> +12 %)
+  const lib = e => e == null ? {t: 'Pas assez de ventes', c: 'muted'} : e <= -0.12 ? {t: 'Sous le marché', c: 'ok'} : e <= -0.04 ? {t: 'Bien placé', c: 'ok'} : e <= 0.05 ? {t: 'Dans le marché', c: 'acc'} : e <= 0.12 ? {t: 'Un peu au-dessus', c: 'warn'} : {t: 'Au-dessus du marché', c: 'bad'};
   return {type, S, T, lastYear, ref, fac, slope, all, cands, ecartes, top5, top8, m5, m8, valeur, valeurAj, lo, hi, fourchette: valeur ? [Math.round(valeur * lo / 1000) * 1000, Math.round(valeur * hi / 1000) * 1000] : null,
     cv, cv5, fiab, tot, totE, totAuto, totMan, capAuto, near90, sumAutoBrut, sumAutoDemi, items, atouts: items.filter(a => a.auto), nRes, resStats, resMode, basePm2, situe, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
 };
