@@ -29,10 +29,42 @@ VA.ventes = P => (P.marche && P.marche.ventes || []).map(v => ({x: v[0], y: v[1]
 VA.dpeList = P => (P.dpe && P.dpe.L || []).map(r => ({date: r[0], adr: r[1], t: r[2], s: r[3], l: r[4], an: r[5], et: r[6], res: r[7], comp: r[8], en: r[9], cout: r[10], id: r[11], x: r[12], y: r[13], copro: r[14], kwh: r[15], nxt: r[16] || null, orig: r[17] || null, q: !!r[18]}));
 VA.ademe = id => id ? 'https://observatoire-dpe-audit.ademe.fr/afficher-dpe/' + encodeURIComponent(id) : null;
 VA.monSecteur = adr => 'https://app.myacademia.ai/app/dossiers/nouveau?adresse=' + encodeURIComponent(adr || '');
-VA.copros = P => (P.copros || []).map(c => ({im: c[0], nom: c[1], adr: c[2], lotsH: c[3], lots: c[4], per: c[5], typeSyndic: c[6], syndic: c[7], mandat: c[8], fin: c[9], x: c[10], y: c[11], sujet: c[12], immat: c[13]}));
+VA.copros = P => (P.copros || []).map(c => ({im: c[0], nom: c[1], adr: c[2], lotsH: c[3], lots: c[4], per: c[5], typeSyndic: c[6], syndic: c[7], mandat: c[8], fin: c[9], x: c[10], y: c[11], sujet: c[12], immat: c[13], lat: c[14] || null, lon: c[15] || null}));
 VA.typeBien = P => { const A = P.annonce; if (A.type === 'M' || A.type === 'A') return A.type; const d = P.adresse && P.adresse.dpe; if (d && d.type === 'maison') return 'M'; if (d && d.type === 'appartement') return 'A'; const M = P.marche; return (M && M.allMed && M.allMed.M && !M.allMed.A) ? 'M' : 'A'; };
 
 /* ---------- estimation ---------- */
+
+/* ---------- Les atouts annoncés : ce que les ventes DVF ne voient pas (vue, étage, terrasse, piscine, garage, état, standing) ----------
+   Ordres de grandeur, pas une science : chaque ligne se coche, se décoche et se corrige. Ils s'ajoutent à la valeur « au m² standard ». */
+VA.atouts = function (P) {
+  const A = P.annonce || {}; const type = VA.typeBien(P); const t = ((A.titre || '') + ' ' + (A.desc || '')).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const has = re => re.test(t); const out = []; const add = (k, l, p, plage, e) => out.push({k, l, p, plage, e: e || 0, auto: true});
+  const mer = A.vueMer || has(/vue (?:mer|sur la mer|sur mer|panoramique)|donne sur la mer|face (?:a la )?mer|front de mer|pieds dans l'eau|vue imprenable|vue degagee sur la mer|vue baie/);
+  if (mer) { const pano = has(/panoramique|pieds dans l'eau|front de mer|face (?:a la )?mer|vue imprenable|premiere ligne/); add('mer', pano ? 'Vue mer dégagée ou front de mer (annonce)' : 'Vue mer (annonce)', pano ? 25 : 15, pano ? '15 à 40 %' : '10 à 25 %'); }
+  if (type === 'A') {
+    const et = A.etage, nv = A.niveaux, asc = A.ascenseur;
+    if (has(/dernier etage|attique|toit[- ]terrasse/) || (et != null && nv && et >= nv && et >= 2)) add('etage', 'Dernier étage', 8, '5 à 12 %');
+    else if (et != null && et >= 3 && asc !== false) add('etage', `Étage élevé (${et}e)${asc ? ' avec ascenseur' : ''}`, 5, '3 à 8 %');
+    else if (et != null && et >= 3 && asc === false) add('etage', `${et}e étage sans ascenseur`, -8, '−12 à −5 %');
+    else if (et === 0 && !has(/rez[- ]de[- ]jardin/)) add('etage', 'Rez-de-chaussée', -6, '−10 à −3 %');
+    if (has(/rez[- ]de[- ]jardin|jardin privatif/)) add('jardin', 'Jardin privatif ou rez-de-jardin', 4, '2 à 8 %');
+  }
+  if (A.terrasse >= 30 || has(/grande terrasse|vaste terrasse|terrasse de \d{2,} ?m/)) add('terrasse', 'Grande terrasse', 10, '6 à 15 %');
+  else if (A.terrasse > 0 || has(/terrasse/)) add('terrasse', has(/deux terrasses|2 terrasses|terrasses/) ? 'Terrasses' : 'Terrasse', 7, '5 à 12 %');
+  else if (has(/balcon/)) add('terrasse', 'Balcon', 2, '1 à 4 %');
+  if (A.piscine || has(/piscine/)) add('piscine', type === 'A' ? 'Piscine dans la résidence' : 'Piscine', type === 'A' ? 4 : 6, type === 'A' ? '3 à 6 %' : '4 à 8 %');
+  if (A.travaux || has(/travaux a prevoir|a rafraichir|a renover|a restaurer|a remettre au gout du jour|gros travaux/)) add('etat', 'Travaux à prévoir (annonce)', -10, '−15 à −5 %');
+  else if (has(/refait a neuf|entierement renove|renove|excellent etat|tres bon etat|impeccable|aucun travaux|sans travaux|parfait etat/)) add('etat', 'Très bon état annoncé', 5, '3 à 8 %');
+  if (has(/prestige|standing|haut de gamme|luxe|luxueu|residence securisee|gardien|concierge/)) add('standing', 'Résidence de standing (annonce)', 5, '3 à 8 %');
+  if (has(/garage|box ferme|\bbox\b/) || A.garages) add('garage', 'Garage ou box', 0, '25 000 à 40 000 €', 30000);
+  else if (has(/parking|stationnement|place de voiture/) || A.parkings) add('garage', 'Place de parking', 0, '10 000 à 20 000 €', 15000);
+  if (has(/\bcave\b/)) add('cave', 'Cave', 0, '2 000 à 5 000 €', 3000);
+  if (type === 'A' && has(/sans ascenseur/) && !out.some(a => a.k === 'etage')) add('etage', 'Sans ascenseur', -5, '−10 à −3 %');
+  if (has(/expose nord|exposition nord|oriente nord|plein nord/)) add('expo', 'Exposition nord', -3, '−6 à −2 %');
+  if (has(/bruyant|route passante|nuisances|voie rapide|voie ferree/)) add('bruit', 'Nuisances signalées', -5, '−10 à −3 %');
+  return out;
+};
+
 VA.estimer = function (P, adj) {
   const A = P.annonce, M = P.marche; if (!M || !M.ventes || !M.ventes.length) return null;
   const type = VA.typeBien(P); const S = A.surface || (P.adresse && P.adresse.dpe && P.adresse.dpe.surface) || null; const T = A.terrain || 0;
@@ -50,8 +82,13 @@ VA.estimer = function (P, adj) {
   all.forEach(r => r.pm2r = r.pm2 * r.f);
   if (!S) return {type, S: null, n: all.length, lastYear, ref};
   const pieces = A.pieces || null;
-  const cands = all.filter(r => r.s / S >= 0.55 && r.s / S <= 1.8).map(r => {
+  const adjArr = adj || []; const excl = new Set(adjArr.filter(a => a.k && a.k.startsWith('x:') && a.on !== false).map(a => a.k.slice(2)));
+  const keyOf = r => (r.pc || '') + '|' + r.d + '|' + r.pk; VA.saleKey = keyOf;
+  const mine = VA.copros(P).find(c => c.sujet); const resPt = (A.residence || P.centre && P.centre.source === 'conseiller') ? [0, 0] : (mine && (mine.x || mine.y) ? [mine.x, mine.y] : null);
+  all.forEach(r => { r.res = !!((P.parcelle && r.pc === P.parcelle.id) || (resPt && Math.hypot(r.x - resPt[0], r.y - resPt[1]) <= 70)); r.key = keyOf(r); });
+  const cands = all.filter(r => r.s / S >= 0.55 && r.s / S <= 1.8 && !excl.has(r.key)).map(r => {
     let score = Math.abs(Math.log(r.s / S)) * 3 + r.km / 300 + ageY(r.d) * 0.6;
+    if (r.res) score -= 1.2; // les ventes de la résidence ou de la parcelle d'abord (même règle que Mon secteur)
     if (type === 'M') { if (T > 0 && r.g > 0) score += Math.abs(Math.log(r.g / T)) * 0.4; else if (r.g === 0) score += 0.3; }
     if (pieces && r.n) score += Math.min(1, Math.abs(r.n - pieces) * 0.15);
     if (r.nl > 2) score += 0.6;
@@ -68,14 +105,25 @@ VA.estimer = function (P, adj) {
   const mean = top5.length ? top5.reduce((a, c) => a + c.pm2r, 0) / top5.length : 0;
   const cv = top5.length > 1 ? Math.sqrt(top5.reduce((a, c) => a + (c.pm2r - mean) ** 2, 0) / top5.length) / mean : null;
   const fiab = (top5.length === 5 && cv != null && cv < 0.15 && top5[4].score < 2.4) ? 'bonne' : (top5.length >= 4 && cv != null && cv < 0.28) ? 'moyenne' : 'faible';
-  const tot = clamp((adj || []).filter(a => a.on !== false).reduce((s, a) => s + (+a.p || 0), 0), -15, 15);
-  const valeurAj = valeur ? Math.round(valeur * (1 + tot / 100) / 1000) * 1000 : null;
+  // atouts annoncés (automatiques, corrigeables) + ajustements du conseiller ; exclusions à part
+  const autoA = VA.atouts(P); const byK = {}; adjArr.forEach(a => { if (a.k) byK[a.k] = a; });
+  const items = autoA.map(a => { const o = byK[a.k]; return Object.assign({}, a, o ? {on: o.on !== false, p: o.p != null ? +o.p : a.p, e: o.e != null ? +o.e : a.e} : {on: true}); })
+    .concat(adjArr.filter(a => !a.k).map(a => ({k: null, l: a.l, p: +a.p || 0, e: +a.e || 0, on: a.on !== false, auto: false})));
+  const onItems = items.filter(a => a.on);
+  const tot = clamp(onItems.reduce((s, a) => s + (+a.p || 0), 0), -35, 60); const totE = onItems.reduce((s, a) => s + (+a.e || 0), 0);
+  const valeurAj = valeur ? Math.round((valeur * (1 + tot / 100) + totE) / 1000) * 1000 : null;
+  // quartier à deux vitesses : à 350 m et 3 ans, le 9e décile des €/m² dépasse de 35 % la médiane (front de mer, résidences de standing)
+  let deuxMarches = null; { const near = all.filter(r => r.km <= 350 && ageY(r.d) <= 3).map(r => r.pm2r).sort((a, b) => a - b); if (near.length >= 30) { const m = med(near), p90 = pctl(near, 0.9), p25 = pctl(near, 0.25); if (p90 / m >= 1.35) {
+      const st = {}; all.filter(r => r.km <= 350 && ageY(r.d) <= 3 && r.a).forEach(r => { const k = r.a.replace(/^\d+\s*(bis|ter)?\s*/i, ''); (st[k] = st[k] || []).push(r.pm2r); });
+      const hauts = Object.entries(st).map(([k, v]) => ({rue: k, n: v.length, med: med(v)})).filter(x => x.n >= 3 && x.med >= m * 1.25).sort((a, b) => b.med - a.med).slice(0, 5);
+      const bas = Object.entries(st).map(([k, v]) => ({rue: k, n: v.length, med: med(v)})).filter(x => x.n >= 3 && x.med <= m * 0.95).sort((a, b) => a.med - b.med).slice(0, 4);
+      deuxMarches = {n: near.length, med: m, p25, p90, hauts, bas}; } } }
   const ecart = (A.prix && valeur) ? A.prix / valeur - 1 : null;
   const ecartAj = (A.prix && valeurAj) ? A.prix / valeurAj - 1 : null;
   const ecart8 = (A.prix && m8) ? A.prix / (m8 * S) - 1 : null;
   const lib = e => e == null ? {t: 'Pas assez de ventes', c: 'muted'} : e <= -0.08 ? {t: 'Sous le marché', c: 'ok'} : e <= 0.05 ? {t: 'Dans le marché', c: 'acc'} : e <= 0.12 ? {t: 'Un peu au-dessus', c: 'warn'} : {t: 'Au-dessus du marché', c: 'bad'};
   return {type, S, T, lastYear, ref, fac, slope, all, cands, ecartes, top5, top8, m5, m8, valeur, valeurAj, lo, hi, fourchette: valeur ? [Math.round(valeur * lo / 1000) * 1000, Math.round(valeur * hi / 1000) * 1000] : null,
-    cv, fiab, tot, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length};
+    cv, fiab, tot, totE, items, atouts: items.filter(a => a.auto), nRes: top5.filter(c => c.res).length, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
 };
 
 /* ---------- géométrie ---------- */

@@ -150,6 +150,10 @@ routes.d = async (id) => {
   const client = document.body.classList.contains('client');
   const ctx = {id, adj: adjOf(id), suivi: suivi()[id] || [], reglages: reglages(), standalone: false};
   ctx.onAdj = arr => { setAdj(id, arr); routes.d(id); };
+  ctx.onPick = async pick => { // « vous savez où c'est ? » : le dossier se refait centré sur l'adresse ou la résidence, même identifiant
+    let res = pick;
+    if (pick.adresse) { toast('Recherche de l’adresse…'); const g = await VA.geocode(pick.adresse, P.centre).catch(() => null); if (!g) return toast('Adresse inconnue de la Base Adresse Nationale.', 5000); if (g.type === 'municipality') return toast('Précisez la rue et le numéro.', 5000); res = {adr: g.adr, lat: g.lat, lon: g.lon}; }
+    screenHome(); lancer({annonce: P.annonce, residence: res}); };
   ctx.onAct = async (act, b) => {
     if (act === 'print') window.print();
     else if (act === 'export') exportHtml(P, ctx);
@@ -220,7 +224,7 @@ routes.suivi = () => {
 /* ---------- écran : rendez-vous ---------- */
 routes.rdv = async (id) => {
   const P = id && await DB.get(id); if (!P) { view('<div class="card">Choisissez d’abord un dossier. <a href="#dossiers">Mes dossiers</a></div>'); return; }
-  const A = P.annonce; const adj = adjOf(id); const est = VA.estimer(P, adj); const R = reglages(); const N = notesOf(id);
+  const A = P.annonce; const adjAll = adjOf(id); const est = VA.estimer(P, adjAll); const R = reglages(); const N = notesOf(id); const adj = (est && est.items || []).map(a => ({k: a.k, on: a.on, l: a.l, p: a.p || 0, e: a.e || 0, auto: a.auto}));
   if (!est || !est.valeur) { view(`<div class="card">Pas assez de ventes comparables pour construire les scénarios de prix. <a href="#d/${esc(id)}">Retour au dossier</a></div>`); return; }
   const base = est.valeurAj || est.valeur; const S = est.S;
   const pctile = v => { const arr = est.all.map(r => r.pm2r); if (!arr.length) return null; return Math.round(arr.filter(x => x >= v).length / arr.length * 100); };
@@ -233,14 +237,14 @@ routes.rdv = async (id) => {
     <div class="scen">${scen.map(s => `<div class="card" style="${s.k === 'juste' ? 'border:2px solid var(--accent)' : ''}"><span class="chip ${s.c}">${s.lab}</span><span class="v" style="margin-top:6px;${s.k === 'juste' ? 'color:var(--accent)' : ''}">${eur(s.p)}</span><span class="small mono muted">${m2(s.p / S)} · ${pctile(s.p / S) != null ? pctile(s.p / S) + ' % des ventes du secteur se sont faites à ce niveau ou plus cher' : ''}</span><p class="note" style="margin:6px 0 0">${s.txt}</p>${A.prix ? `<span class="small">${A.prix > s.p ? 'Le prix affiché est ' + pct(A.prix / s.p - 1) + ' au-dessus.' : A.prix < s.p ? 'Le prix affiché est ' + pct(1 - A.prix / s.p).replace('+', '−') + ' en dessous.' : 'C’est le prix affiché.'}</span>` : ''}</div>`).join('')}</div>
     <div class="grid g2" style="margin-top:16px">
       <div class="card"><div class="sec-h"><h3>Ce que coûte de surévaluer</h3></div><p>${surEval}</p><p class="note">Argument universel : un bien qui démarre trop haut rate ses acheteurs de la première quinzaine, ceux qui ont déjà tout visité et décident vite ; ensuite il faut baisser plus qu’il n’aurait fallu, et l’acheteur négocie encore.</p></div>
-      <div class="card"><div class="sec-h"><h3>Vos ajustements</h3><p>Ils restent séparés de la statistique, et visibles du vendeur.</p></div><ul class="adj" id="adjList" style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">${adj.map((a, i) => `<li><input type="checkbox" data-adj-on="${i}" ${a.on === false ? '' : 'checked'}><input type="text" data-adj-l="${i}" value="${esc(a.l)}" placeholder="Motif"><input type="number" data-adj-p="${i}" value="${a.p}" step="0.5" min="-30" max="30"> %<button class="btn-s" data-adj-del="${i}">✕</button></li>`).join('')}</ul><div class="row" style="margin-top:8px"><button class="btn-s" id="adjAdd">+ Ajouter</button><span class="note">Total plafonné à ±15 %.</span></div></div>
+      <div class="card"><div class="sec-h"><h3>Vos ajustements</h3><p>Ils restent séparés de la statistique, et visibles du vendeur.</p></div><ul class="adj" id="adjList" style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">${adj.map((a, i) => `<li data-k="${esc(a.k || '')}" data-e="${a.e || ''}"><input type="checkbox" data-adj-on="${i}" ${a.on === false ? '' : 'checked'}><input type="text" data-adj-l="${i}" value="${esc(a.l || '')}" placeholder="Motif" ${a.auto ? 'readonly' : ''}>${a.e && !a.p ? `<span class="mono small">${(a.e > 0 ? '+' : '') + kE(a.e)}</span><input type="hidden" data-adj-p="${i}" value="0">` : `<input type="number" data-adj-p="${i}" value="${a.p || 0}" step="0.5" min="-40" max="60"> %`}${a.auto ? '' : `<button class="btn-s" data-adj-del="${i}">✕</button>`}</li>`).join('')}</ul><div class="row" style="margin-top:8px"><button class="btn-s" id="adjAdd">+ Ajouter</button><span class="note">Total plafonné à ±15 %.</span></div></div>
     </div>
     <div class="grid g2" style="margin-top:16px">
       <div class="card"><div class="sec-h"><h3>Arguments, dans l’ordre</h3></div><ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:14.5px">
         <li>« J’ai regardé les ${est.n} ventes de ${est.type === 'M' ? 'maisons' : 'appartements'} à moins de 800 m depuis ${new Date().getFullYear() - 6} : voici les cinq qui ressemblent le plus à chez vous. » (tableau de la section Prix)</li>
         <li>« Recalées à aujourd’hui, elles donnent ${m2(est.m5)}, soit ${eur(est.valeur)} pour vos ${fmt(S)} m². »</li>
         <li>« Huit ventes sur dix dans le quartier se font entre ${kE(est.fourchette[0])} et ${kE(est.fourchette[1])} : au-dessus, on attend l’exception. »</li>
-        ${Math.abs(est.tot) > 0 ? `<li>« Ce que j’ai vu chez vous vaut ${pct(est.tot / 100, 1)} : ${adj.filter(a => a.on !== false && a.l).map(a => a.l + ' (' + (a.p > 0 ? '+' : '') + a.p + ' %)').join(', ')}. »</li>` : ''}
+        ${(Math.abs(est.tot) > 0 || est.totE) ? `<li>« Ce que l’annonce promet et ce que j’ai vu : ${adj.filter(a => a.on !== false && a.l).map(a => a.l.replace(/ \(annonce\)/, '') + ' (' + (a.p ? (a.p > 0 ? '+' : '') + a.p + ' %' : (a.e > 0 ? '+' : '') + kE(a.e)) + ')').join(', ')} : on passe de ${eur(est.valeur)} à ${eur(est.valeurAj)}. »</li>` : ''}
         <li>« Trois façons de partir : ${eur(scen[0].p)} pour vendre vite, ${eur(scen[1].p)} au juste prix, ${eur(scen[2].p)} si on veut tenter — avec le risque de baisser plus tard. »</li>
         ${P.risques && P.risques.plu ? `<li>Pour rassurer : zone ${esc(P.risques.plu.z)} du PLU, risques au point connus (argile ${esc((P.risques.argile || '').toLowerCase())}), copropriété et DPE vérifiés : l’acheteur n’aura pas de mauvaise surprise, donc pas de prétexte pour renégocier.</li>` : ''}
       </ol></div>
@@ -255,7 +259,7 @@ routes.rdv = async (id) => {
   $('#rExport').addEventListener('click', () => exportHtml(P, {adj}));
   $('#copyPrompt').addEventListener('click', () => navigator.clipboard.writeText($('#prompt').textContent).then(() => toast('Prompt copié.')));
   $('#nSave').addEventListener('click', () => { setNotes(id, {date: $('#nDate').value, txt: $('#nTxt').value, mandat: $('#nMandat').checked}); toast('Notes enregistrées.'); });
-  const adjList = $('#adjList'); const collect = () => { const out = []; adjList.querySelectorAll('li').forEach(li => out.push({on: li.querySelector('[data-adj-on]').checked, l: li.querySelector('[data-adj-l]').value, p: +li.querySelector('[data-adj-p]').value || 0})); return out; };
+  const adjList = $('#adjList'); const collect = () => { const out = []; adjList.querySelectorAll('li').forEach(li => { const k = li.dataset.k || null; const it = {on: li.querySelector('[data-adj-on]').checked, l: li.querySelector('[data-adj-l]').value, p: +li.querySelector('[data-adj-p]').value || 0}; if (k) it.k = k; const e0 = li.dataset.e; if (e0) it.e = +e0; out.push(it); }); adjOf(id).filter(x => x.k && x.k.startsWith('x:')).forEach(x => out.push(x)); return out; };
   adjList.addEventListener('change', () => { setAdj(id, collect()); routes.rdv(id); }); adjList.addEventListener('click', e => { const b = e.target.closest('[data-adj-del]'); if (b) { const arr = collect(); arr.splice(+b.dataset.adjDel, 1); setAdj(id, arr); routes.rdv(id); } });
   $('#adjAdd').addEventListener('click', () => { const arr = collect(); arr.push({on: true, l: '', p: 0}); setAdj(id, arr); routes.rdv(id); });
 };
