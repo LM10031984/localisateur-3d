@@ -357,7 +357,7 @@ VA.wireDossier = function (root, P, ctx) {
   const sun3dBtn = root.querySelector('[data-act="sun3d"]');
   const open3d = async () => { const box = root.querySelector('#sun3d'); const info = root.querySelector('#sun3dInfo'); if (!box) return; if (view3d) { box.style.display = box.style.display === 'none' ? '' : 'none'; return; }
     box.style.display = ''; if (info) info.textContent = 'Chargement de la 3D…'; if (sun3dBtn) sun3dBtn.disabled = true;
-    try { if (!VA.sun3d) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'sun3d.js?v=1'; s.onload = res; s.onerror = () => rej(new Error('sun3d.js')); document.head.appendChild(s); });
+    try { if (!VA.sun3d) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'sun3d.js?v=2'; s.onload = res; s.onerror = () => rej(new Error('sun3d.js')); document.head.appendChild(s); });
       view3d = await VA.sun3d(box, P, S, () => ({season, hour}), () => { if (info) info.textContent = 'Tournez avec la souris, zoomez à la molette. Le bien est en orange ; le curseur et la saison pilotent le soleil.'; });
       box.scrollIntoView({behavior: 'smooth', block: 'center'}); if (sun3dBtn) { sun3dBtn.disabled = false; sun3dBtn.textContent = 'Masquer / afficher la 3D'; } }
     catch (e) { console.error(e); if (info) info.textContent = 'La 3D n’a pas pu se charger (' + (e.message || e) + ').'; if (sun3dBtn) sun3dBtn.disabled = false; } };
