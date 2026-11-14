@@ -185,6 +185,7 @@ function secSoleil(P, est, ctx) {
       </div>
       ${(() => { const pb = VA.parcelleDe(P, bS); if (!pb || !pb.g || !pb.g.length) return ''; const ring = VA.geo.closed(pb.g[0]); const n = (P.carte.bati || []).filter(b => b.h >= 2.8 && VA.geo.inPoly(b.c, ring)).length; return n > 1 ? `<p class="note">La parcelle porte ${n} bâtiments : le calcul vise le plus probable (voir « Bâtiments de la parcelle »), à confirmer sur place.</p>` : ''; })()}
       <p id="sunRead" style="margin:4px 0 2px"></p><p id="sunJ" style="margin:0 0 10px"></p>
+      ${ctx.standalone ? '' : `<div class="row noprint" style="margin:0 0 10px"><button class="btn-s btn-d" data-act="sun3d">Voir en 3D : bâtiments, relief et ombres</button><button class="btn-s" data-act="sunplay">▶ Jouer la journée</button><span class="note" id="sun3dInfo"></span></div><div id="sun3d" class="noprint" style="display:none;margin:0 0 12px;border-radius:10px;overflow:hidden;background:#eaf2fb"></div>`}
       <div class="tbl"><table><thead><tr><th>Saison</th><th>Lever · coucher</th><th>Soleil direct sur la façade sud / terrasse (hors relief lointain et arbres)</th></tr></thead><tbody>${rowsTbl}</tbody></table></div>
       <p class="note" style="margin-top:8px">Ombres calculées sur les hauteurs de la BD TOPO, sol plat autour de chaque bâtiment ; la différence d’altitude entre le bien et ses voisins est prise en compte pour la terrasse. Le relief lointain et la végétation ne sont pas mesurés ici. Heures légales (Paris).</p>
     </div></section>`;
@@ -351,6 +352,20 @@ VA.wireDossier = function (root, P, ctx) {
   root.querySelectorAll('#sunSeason button').forEach(b => b.addEventListener('click', () => { season = b.dataset.s; root.querySelectorAll('#sunSeason button').forEach(o => o.setAttribute('aria-pressed', o === b)); render(); }));
   const slider = root.querySelector('#sunHour'); if (slider) slider.addEventListener('input', () => { hour = +slider.value; render(); });
   render();
+  // vue 3D et animation de la journée
+  let playing = null, view3d = null;
+  const sun3dBtn = root.querySelector('[data-act="sun3d"]');
+  const open3d = async () => { const box = root.querySelector('#sun3d'); const info = root.querySelector('#sun3dInfo'); if (!box) return; if (view3d) { box.style.display = box.style.display === 'none' ? '' : 'none'; return; }
+    box.style.display = ''; if (info) info.textContent = 'Chargement de la 3D…'; if (sun3dBtn) sun3dBtn.disabled = true;
+    try { if (!VA.sun3d) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'sun3d.js?v=1'; s.onload = res; s.onerror = () => rej(new Error('sun3d.js')); document.head.appendChild(s); });
+      view3d = await VA.sun3d(box, P, S, () => ({season, hour}), () => { if (info) info.textContent = 'Tournez avec la souris, zoomez à la molette. Le bien est en orange ; le curseur et la saison pilotent le soleil.'; });
+      box.scrollIntoView({behavior: 'smooth', block: 'center'}); if (sun3dBtn) { sun3dBtn.disabled = false; sun3dBtn.textContent = 'Masquer / afficher la 3D'; } }
+    catch (e) { console.error(e); if (info) info.textContent = 'La 3D n’a pas pu se charger (' + (e.message || e) + ').'; if (sun3dBtn) sun3dBtn.disabled = false; } };
+  const play = () => { const btn = root.querySelector('[data-act="sunplay"]'); if (playing) { clearInterval(playing); playing = null; if (btn) btn.textContent = '▶ Jouer la journée'; return; }
+    const s = S.SEASONS[season]; const p = S.plages(s); let h = (p.lever || 7) - 0.25; const end = (p.coucher || 19) + 0.25; if (btn) btn.textContent = '■ Arrêter';
+    playing = setInterval(() => { h += 0.1; if (h > end) h = (p.lever || 7) - 0.25; hour = h; if (slider) slider.value = Math.max(6, Math.min(20, h)); render(); }, 120); };
+  if (sun3dBtn) sun3dBtn.addEventListener('click', open3d);
+  const playBtn = root.querySelector('[data-act="sunplay"]'); if (playBtn) playBtn.addEventListener('click', play);
   // acheteur
   const bT = root.querySelector('#bTiles');
   if (bT) { const upd = () => { const prix = +root.querySelector('#bPrix').value || P.annonce.prix; const c = VA.calcAcheteur(prix, +root.querySelector('#bTaux').value, +root.querySelector('#bDuree').value, +root.querySelector('#bApport').value, P.annonce.neuf);
@@ -362,6 +377,6 @@ VA.wireDossier = function (root, P, ctx) {
     adjList.addEventListener('change', () => ctx.onAdj(collect())); adjList.addEventListener('click', e => { const b = e.target.closest('[data-adj-del]'); if (b) { const arr = collect(); arr.splice(+b.dataset.adjDel, 1); ctx.onAdj(arr); } });
     const add = root.querySelector('[data-act="adj-add"]'); if (add) add.addEventListener('click', () => { const arr = collect(); arr.push({on: true, l: '', p: 0}); ctx.onAdj(arr); }); }
   // boutons
-  root.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => { const act = b.dataset.act; if (ctx.onAct) ctx.onAct(act, b); }));
+  root.querySelectorAll('[data-act]').forEach(b => { if (b.dataset.act === 'sun3d' || b.dataset.act === 'sunplay' || b.dataset.act === 'adj-add') return; b.addEventListener('click', () => { const act = b.dataset.act; if (ctx.onAct) ctx.onAct(act, b); }); });
 };
 })(window.VA);
