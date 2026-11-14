@@ -88,7 +88,8 @@ function secHero(P, est, ctx) {
           <dt>Dossier généré</dt><dd>${dateFr(P.genere)} · ${P.duree || '?'} s</dd>
         </dl>
       </div>
-    </div></section>`;
+    </div>
+    <div style="margin-top:16px">${tiles}</div></section>`;
 }
 
 function secOu(P, est, ctx) {

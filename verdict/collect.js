@@ -152,7 +152,7 @@ async function collect(input, onStep) {
     const near = sales.filter(x => x.km <= R300).sort(byDate).slice(0, 250);
     const far = sales.filter(x => x.km > R300).sort(byDate).slice(0, 400);
     if (A.mode === 'adresse' && centre.adr) { const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim(); const a0 = norm(centre.adr); const num = (a0.match(/^(\d+)/) || [])[1]; const w = a0.replace(/^\d+\s*(bis|ter)?\s*/, '').split(' ').filter(x => x.length > 3)[0];
-      P.self = P.self || {}; P.self.ventes = sales.filter(x => x.km <= 60 && x.a && (!num || norm(x.a).startsWith(num + ' ')) && (!w || norm(x.a).includes(w))).sort((x, y) => x.d < y.d ? 1 : -1).slice(0, 6).map(x => ({d: x.d, p: x.p, t: x.t, s: x.s, n: x.n, g: x.g})); }
+      P.self = P.self || {}; P.self.ventes = sales.filter(x => x.km <= 160 && x.a && (!num || norm(x.a).startsWith(num + ' ')) && (!w || norm(x.a).includes(w))).sort((x, y) => x.d < y.d ? 1 : -1).slice(0, 6).map(x => ({d: x.d, p: x.p, t: x.t, s: x.s, n: x.n, g: x.g})); }
     P.marche = {source, years, MED, CNT, n800: sales.length, n300: near.length, dvfLast: sales.map(x => x.d).sort().pop() || null,
       ventes: near.concat(far).map(x => [x.o[0], x.o[1], x.t, Math.round(x.p / 1000), Math.round(x.s), x.n || 0, x.d, x.t == 'M' ? x.g : 0, (x.a || '').replace(/[;,]/g, ' '), x.km, x.pc || '', x.nl || 1]),
       allMed: {A: med(sales.filter(x => x.t == 'A').map(x => x.p / x.s)), M: med(sales.filter(x => x.t == 'M').map(x => x.p / x.s))}};
