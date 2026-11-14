@@ -14,7 +14,7 @@ const monthFr = d => { if (!d) return '–'; const x = new Date(d); return isNaN
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]);
 const titleCase = s => String(s || '').toLowerCase().replace(/(^|[\s'’-])\S/g, c => c.toUpperCase());
 const ABR = {av: 'av.', ave: 'av.', avenue: 'av.', bd: 'bd', boulevard: 'bd', che: 'ch.', chem: 'ch.', chemin: 'ch.', imp: 'imp.', impasse: 'imp.', all: 'all.', allee: 'all.', 'allée': 'all.', rte: 'rte', route: 'rte', pl: 'pl.', place: 'pl.', mte: 'montée', montee: 'montée', trav: 'traverse', crs: 'cours', sq: 'square', lot: 'lot.', res: 'rés.', ham: 'hameau', qua: 'quai', esp: 'esplanade', prom: 'prom.', sen: 'sentier', vla: 'villa', pas: 'passage', dom: 'domaine', cite: 'cité', art: 'anc. rte', vc: 'voie communale', rle: 'ruelle', cor: 'corniche', plt: 'plateau', car: 'carrefour', ptte: 'placette', vge: 'village', zac: 'ZAC', rpt: 'rond-point', qu: 'quartier', fg: 'faubourg', gr: 'grande rue'};
-const niceAdr = s => { s = String(s || '').replace(/\s+/g, ' ').trim(); const parts = s.split(' '); return parts.map((w, i) => { const k = w.toLowerCase().replace(/\.$/, ''); if (k === 'art' && /^anc/i.test(parts[i + 1] || '')) return ''; if (ABR[k] && (i === 0 || /^\d/.test(parts[i - 1]) || i === 1)) return ABR[k]; if (i > 0 && /^(de|du|des|la|le|les|l'|d'|et|à|au|aux|sur|sous)$/i.test(w)) return w.toLowerCase(); return w; }).filter(Boolean).join(' '); };
+const niceAdr = s => { s = String(s || '').replace(/\s+/g, ' ').trim().replace(/^(\d+)([a-zA-Z\u00e9\u00e8]{2,})/, '$1 $2'); const parts = s.split(' '); return parts.map((w, i) => { const k = w.toLowerCase().replace(/\.$/, ''); if (k === 'art' && /^anc/i.test(parts[i + 1] || '')) return ''; if (ABR[k] && (i === 0 || /^\d/.test(parts[i - 1]) || i === 1)) return ABR[k]; if (i > 0 && /^(de|du|des|la|le|les|l'|d'|et|à|au|aux|sur|sous)$/i.test(w)) return w.toLowerCase(); return w; }).filter(Boolean).join(' '); };
 const streetOnly = s => String(s || '').replace(/^\d+\s?(bis|ter|[a-z])?\s+/i, '');
 const med = a => { a = (a || []).filter(v => v != null && !isNaN(v)).slice().sort((x, y) => x - y); return a.length ? (a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2) : null; };
 const pctl = (arr, p) => { const a = arr.slice().sort((x, y) => x - y); if (!a.length) return null; const i = (a.length - 1) * p; const lo = Math.floor(i), hi = Math.ceil(i); return a[lo] + (a[hi] - a[lo]) * (i - lo); };
@@ -110,28 +110,40 @@ VA.estimer = function (P, adj) {
   const ecartes = mPool ? pool.filter(c => !(c.pm2r >= mPool * 0.6 && c.pm2r <= mPool * 1.5)) : [];
   const top5 = kept.slice(0, 5), top8 = kept.slice(0, 8);
   const m5 = med(top5.map(c => c.pm2r)), m8 = med(top8.map(c => c.pm2r));
-  const valeur = m5 ? Math.round(m5 * S / 1000) * 1000 : null;
-  const allR = all.map(r => r.pm2r); const medAll = med(allR); let lo = 0.75, hi = 1.3;
-  if (allR.length >= 15 && medAll) { const ratios = allR.map(v => v / medAll); lo = clamp(pctl(ratios, 0.1), 0.65, 0.95); hi = clamp(pctl(ratios, 0.9), 1.05, 1.4); }
-  const mean = top5.length ? top5.reduce((a, c) => a + c.pm2r, 0) / top5.length : 0;
-  const cv = top5.length > 1 ? Math.sqrt(top5.reduce((a, c) => a + (c.pm2r - mean) ** 2, 0) / top5.length) / mean : null;
-  const fiab = (top5.length === 5 && cv != null && cv < 0.15 && top5[4].score < 2.4) ? 'bonne' : (top5.length >= 4 && cv != null && cv < 0.28) ? 'moyenne' : 'faible';
-  // atouts annoncés (automatiques, corrigeables) + ajustements du conseiller ; exclusions à part
   const nRes = top5.filter(c => c.res).length;
-  // la résidence vue en entier : toutes ses ventes du type, et la place de l'annonce parmi elles (étage, vue et état font l'écart à l'intérieur d'une même résidence)
+  // la résidence vue en entier : toutes ses ventes du type et la place de l'annonce parmi elles (étage, vue et état font l'écart à l'intérieur d'une même résidence)
   let resStats = null; { const rs = all.filter(c => c.res && !excl.has(c.key)).sort((a, b) => a.pm2r - b.pm2r); if (rs.length >= 3) { const v = rs.map(c => c.pm2r); const pm2A = A.prix && S ? A.prix / S : null;
-    const rank = pm2A ? Math.round(100 * v.filter(x => x <= pm2A).length / v.length) : null; resStats = {n: rs.length, min: v[0], max: v[v.length - 1], med: med(v), p25: pctl(v, 0.25), p75: pctl(v, 0.75), rank, hauts: rs.slice(-3).reverse(), bas: rs.slice(0, 2)}; } }
+    const below = pm2A ? v.filter(x => x <= pm2A).length : null; const rank = pm2A ? Math.round(100 * below / v.length) : null;
+    // base de la valeur : les ventes de surface proche (0,6 à 1,6 fois) si elles sont assez nombreuses, sinon toutes (les petites surfaces se vendent plus cher au m²)
+    const prox = rs.filter(c => c.s / S >= 0.6 && c.s / S <= 1.6); const proches = prox.length >= 8; const bRows = proches ? prox : rs; const bv = bRows.map(c => c.pm2r);
+    resStats = {n: rs.length, min: v[0], max: v[v.length - 1], med: med(v), p25: pctl(v, 0.25), p75: pctl(v, 0.75), p90: pctl(v, 0.9), rank, below, hauts: rs.slice(-3).reverse(), bas: rs.slice(0, 2),
+      proches, nBase: bRows.length, medBase: med(bv), p10Base: pctl(bv, 0.1), p25Base: pctl(bv, 0.25), p75Base: pctl(bv, 0.75), p90Base: pctl(bv, 0.9), rows: rs.slice().sort((a, b) => a.d < b.d ? 1 : -1), since: rs.map(c => c.d).sort()[0]}; } }
+  // mode résidence : au moins 8 ventes dans la résidence → la valeur part de son m² médian (plus robuste que 5 comparables, qu'une vente atypique peut tirer) ; la fourchette est la sienne
+  const resMode = !!(resStats && resStats.nBase >= 8 && situe);
+  const basePm2 = resMode ? resStats.medBase : m5;
+  const valeur = basePm2 ? Math.round(basePm2 * S / 1000) * 1000 : null;
+  const allR = all.map(r => r.pm2r); const medAll = med(allR); let lo = 0.75, hi = 1.3;
+  if (resMode) { lo = clamp(resStats.p10Base / resStats.medBase, 0.5, 0.95); hi = clamp(resStats.p90Base / resStats.medBase, 1.05, 1.6); }
+  else if (allR.length >= 15 && medAll) { const ratios = allR.map(v => v / medAll); lo = clamp(pctl(ratios, 0.1), 0.65, 0.95); hi = clamp(pctl(ratios, 0.9), 1.05, 1.4); }
+  const mean = top5.length ? top5.reduce((a, c) => a + c.pm2r, 0) / top5.length : 0;
+  const cv5 = top5.length > 1 ? Math.sqrt(top5.reduce((a, c) => a + (c.pm2r - mean) ** 2, 0) / top5.length) / mean : null;
+  const cv = resMode ? (resStats.p75Base - resStats.p25Base) / resStats.medBase / 1.35 : cv5; // en mode résidence : dispersion de la moitié centrale, ramenée à un écart-type
+  const fiab = resMode ? ((resStats.nBase >= 12 && cv < 0.25) ? 'bonne' : 'moyenne') : (top5.length === 5 && cv != null && cv < 0.15 && top5[4].score < 2.4) ? 'bonne' : (top5.length >= 4 && cv != null && cv < 0.28) ? 'moyenne' : 'faible';
+  // atouts annoncés (automatiques, corrigeables) + ajustements du conseiller ; exclusions à part
   const autoA = VA.atouts(P); const byK = {}; adjArr.forEach(a => { if (a.k) byK[a.k] = a; });
-  // quand les comparables viennent de la résidence elle-même, ses atouts collectifs (piscine, standing, vue) sont déjà dans leurs prix
-  const dejaRes = nRes >= 3 ? ['piscine', 'standing'] : []; // piscine et standing sont ceux de la résidence : déjà dans ses prix ; vue, étage, terrasse, état, garage restent propres au logement
-  const items = autoA.map(a => { const o = byK[a.k]; const deja = dejaRes.includes(a.k); return Object.assign({}, a, {deja}, o ? {on: o.on !== false, p: o.p != null ? +o.p : a.p, e: o.e != null ? +o.e : a.e} : {on: !deja}); })
+  // quand la valeur vient de la résidence elle-même, ce qui est commun à toute la résidence (piscine, standing) est déjà dans ses prix ; en mode résidence, garage et cave aussi (souvent vendus avec le logement)
+  const dejaMotif = (resMode || nRes >= 3) ? {piscine: 'commun à toute la résidence', standing: 'commun à toute la résidence'} : {};
+  if (resMode) { dejaMotif.garage = 'souvent vendu avec le logement : déjà dans les prix de la résidence'; dejaMotif.cave = 'souvent vendue avec le logement : déjà dans les prix de la résidence'; }
+  const items = autoA.map(a => { const o = byK[a.k]; const deja = !!dejaMotif[a.k]; return Object.assign({}, a, {deja, dejaMotif: dejaMotif[a.k] || ''}, o ? {on: o.on !== false, p: o.p != null ? +o.p : a.p, e: o.e != null ? +o.e : a.e} : {on: !deja}); })
     .concat(adjArr.filter(a => !a.k).map(a => ({k: null, l: a.l, p: +a.p || 0, e: +a.e || 0, on: a.on !== false, auto: false})));
   const onItems = items.filter(a => a.on);
-  // les atouts annoncés se cumulent jusqu'à +30 % (ils se recoupent : vue, standing, piscine vont ensemble) ; ce que le conseiller a vu s'ajoute, ±25 %
-  // plafond des atouts : les meilleures ventes récentes du quartier (9e décile à 350 m, 3 ans) ; un bien ne vaut pas plus que ce que le quartier a déjà payé
-  const near90 = (() => { const v = all.filter(r => r.km <= 350 && ageY(r.d) <= 3).map(r => r.pm2r).sort((a, b) => a - b); return v.length >= 20 ? pctl(v, 0.9) : null; })();
-  const capAuto = near90 && m5 ? clamp(Math.round((near90 / m5 - 1) * 100), 0, 30) : 25;
-  const totAuto = clamp(onItems.filter(a => a.auto).reduce((s, a) => s + (+a.p || 0), 0), -35, capAuto), totMan = clamp(onItems.filter(a => !a.auto).reduce((s, a) => s + (+a.p || 0), 0), -25, 25);
+  // les atouts annoncés se recoupent (une vue mer vient avec l'étage, une terrasse avec la vue) : le premier compte en entier, les suivants pour moitié ; ce que le conseiller a vu s'ajoute, ±25 %
+  // plafond des atouts : les meilleures ventes (9e décile) de la résidence, sinon du quartier (350 m, 3 ans) ; un bien ne vaut pas plus que ce que la résidence ou le quartier a déjà payé
+  const demi = arr => { const s = arr.map(a => +a.p || 0).filter(Boolean); const pos = s.filter(x => x > 0).sort((a, b) => b - a), neg = s.filter(x => x < 0).sort((a, b) => a - b); const f = v => v.reduce((t, x, i) => t + x * (i ? 0.5 : 1), 0); return f(pos) + f(neg); };
+  const near90 = (() => { if (resMode) return resStats.p90Base; const v = all.filter(r => r.km <= 350 && ageY(r.d) <= 3).map(r => r.pm2r).sort((a, b) => a - b); return v.length >= 20 ? pctl(v, 0.9) : null; })();
+  const capAuto = near90 && basePm2 ? clamp(Math.round((near90 / basePm2 - 1) * 100), 0, 30) : 25;
+  const autoOn = onItems.filter(a => a.auto); const sumAutoBrut = autoOn.reduce((s, a) => s + (+a.p || 0), 0), sumAutoDemi = Math.round(demi(autoOn) * 10) / 10;
+  const totAuto = clamp(sumAutoDemi, -35, capAuto), totMan = clamp(onItems.filter(a => !a.auto).reduce((s, a) => s + (+a.p || 0), 0), -25, 25);
   const tot = clamp(totAuto + totMan, -35, 60); const totE = onItems.reduce((s, a) => s + (+a.e || 0), 0);
   const valeurAj = valeur ? Math.round((valeur * (1 + tot / 100) + totE) / 1000) * 1000 : null;
   // quartier à deux vitesses : à 350 m et 3 ans, le 9e décile des €/m² dépasse de 35 % la médiane (front de mer, résidences de standing)
@@ -145,7 +157,7 @@ VA.estimer = function (P, adj) {
   const ecart8 = (A.prix && m8) ? A.prix / (m8 * S) - 1 : null;
   const lib = e => e == null ? {t: 'Pas assez de ventes', c: 'muted'} : e <= -0.08 ? {t: 'Sous le marché', c: 'ok'} : e <= 0.05 ? {t: 'Dans le marché', c: 'acc'} : e <= 0.12 ? {t: 'Un peu au-dessus', c: 'warn'} : {t: 'Au-dessus du marché', c: 'bad'};
   return {type, S, T, lastYear, ref, fac, slope, all, cands, ecartes, top5, top8, m5, m8, valeur, valeurAj, lo, hi, fourchette: valeur ? [Math.round(valeur * lo / 1000) * 1000, Math.round(valeur * hi / 1000) * 1000] : null,
-    cv, fiab, tot, totE, totAuto, totMan, capAuto, near90, items, atouts: items.filter(a => a.auto), nRes, resStats, situe, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
+    cv, cv5, fiab, tot, totE, totAuto, totMan, capAuto, near90, sumAutoBrut, sumAutoDemi, items, atouts: items.filter(a => a.auto), nRes, resStats, resMode, basePm2, situe, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
 };
 
 /* ---------- géométrie ---------- */
