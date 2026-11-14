@@ -57,7 +57,8 @@ VA.atouts = function (P) {
   else if (A.terrasse > 0 || has(/terrasse/)) add('terrasse', has(/deux terrasses|2 terrasses|terrasses/) ? 'Terrasses' : 'Terrasse', 5, '3 à 10 %');
   else if (has(/balcon/)) add('terrasse', 'Balcon', 2, '1 à 4 %');
   if (A.piscine || has(/piscine/)) add('piscine', type === 'A' ? 'Piscine dans la résidence' : 'Piscine', type === 'A' ? 3 : 5, type === 'A' ? '2 à 5 %' : '3 à 8 %');
-  if (A.travaux || has(/travaux a prevoir|a rafraichir|a renover|a restaurer|a remettre au gout du jour|gros travaux/)) add('etat', 'Travaux à prévoir (annonce)', -10, '−15 à −5 %');
+  if (A.travaux || has(/travaux a prevoir|a renover|a restaurer|gros travaux|a rehabiliter|dans son jus|a reprendre entierement/)) add('etat', 'Travaux à prévoir (annonce)', -10, '−15 à −5 %');
+  else if (has(/a rafraichir|a moderniser|a remettre au gout du jour|a actualiser|potentiel de reamenagement|a reamenager|fort potentiel|beau potentiel|potentiel remarquable|prevoir un rafraichissement/)) add('etat', 'Rafraîchissement à prévoir (annonce : « potentiel », « à rafraîchir »)', -6, '−10 à −3 %');
   else if (has(/refait a neuf|entierement renove|renove|excellent etat|tres bon etat|impeccable|aucun travaux|sans travaux|parfait etat/)) add('etat', 'Très bon état annoncé', 4, '3 à 8 %');
   if (has(/prestige|standing|haut de gamme|luxe|luxueu|residence securisee|gardien|concierge/)) add('standing', 'Résidence de standing (annonce)', 4, '3 à 8 %');
   if (has(/garage|box ferme|\bbox\b/) || A.garages) add('garage', 'Garage ou box', 0, '20 000 à 40 000 €', 25000);
@@ -143,7 +144,8 @@ VA.estimer = function (P, adj) {
   // les atouts annoncés se recoupent (une vue mer vient avec l'étage, une terrasse avec la vue) : le premier compte en entier, les suivants pour moitié ; ce que le conseiller a vu s'ajoute, ±25 %
   // plafond des atouts : les meilleures ventes (9e décile) de la résidence, sinon du quartier (350 m, 3 ans) ; un bien ne vaut pas plus que ce que la résidence ou le quartier a déjà payé
   const demi = arr => { const s = arr.map(a => +a.p || 0).filter(Boolean); const pos = s.filter(x => x > 0).sort((a, b) => b - a), neg = s.filter(x => x < 0).sort((a, b) => a - b); const f = v => v.reduce((t, x, i) => t + x * (i ? 0.5 : 1), 0); return f(pos) + f(neg); };
-  const near90 = (() => { if (resMode) return resStats.p90Base; const v = all.filter(r => r.km <= 350 && ageY(r.d) <= 3).map(r => r.pm2r).sort((a, b) => a - b); return v.length >= 20 ? pctl(v, 0.9) : null; })();
+  const near90 = (() => { if (resMode) return resStats.p90Base; const v = all.filter(r => r.km <= 350 && ageY(r.d) <= 3).map(r => r.pm2r).sort((a, b) => a - b); if (v.length >= 20) return pctl(v, 0.9); const w = all.filter(r => ageY(r.d) <= 5).map(r => r.pm2r); return w.length >= 30 ? pctl(w, 0.9) : null; })();
+  const near90Large = !resMode && all.filter(r => r.km <= 350 && ageY(r.d) <= 3).length < 20 && near90 != null; // plafond pris à 800 m et 5 ans
   const capAuto = near90 && basePm2 ? clamp(Math.round((near90 / basePm2 - 1) * 100), 0, 30) : 25;
   const autoOn = onItems.filter(a => a.auto); const sumAutoBrut = autoOn.reduce((s, a) => s + (+a.p || 0), 0), sumAutoDemi = Math.round(demi(autoOn) * 10) / 10;
   const totAuto = clamp(sumAutoDemi, -35, capAuto), totMan = clamp(onItems.filter(a => !a.auto).reduce((s, a) => s + (+a.p || 0), 0), -25, 25);
@@ -161,7 +163,7 @@ VA.estimer = function (P, adj) {
   // cinq niveaux : sous le marché (≤ −12 %), bien placé (−12 à −4 %), dans le marché (−4 à +5 %), un peu au-dessus (+5 à +12 %), au-dessus (> +12 %)
   const lib = e => e == null ? {t: 'Pas assez de ventes', c: 'muted'} : e <= -0.12 ? {t: 'Sous le marché', c: 'ok'} : e <= -0.04 ? {t: 'Bien placé', c: 'ok'} : e <= 0.05 ? {t: 'Dans le marché', c: 'acc'} : e <= 0.12 ? {t: 'Un peu au-dessus', c: 'warn'} : {t: 'Au-dessus du marché', c: 'bad'};
   return {type, S, T, lastYear, ref, fac, slope, all, cands, ecartes, top5, top8, m5, m8, valeur, valeurAj, lo, hi, fourchette: valeur ? [Math.round(valeur * lo / 1000) * 1000, Math.round(valeur * hi / 1000) * 1000] : null,
-    cv, cv5, fiab, tot, totE, totAuto, totMan, capAuto, near90, sumAutoBrut, sumAutoDemi, items, atouts: items.filter(a => a.auto), nRes, resStats, resMode, basePm2, situe, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
+    cv, cv5, fiab, tot, totE, totAuto, totMan, capAuto, near90, near90Large, sumAutoBrut, sumAutoDemi, items, atouts: items.filter(a => a.auto), nRes, resStats, resMode, basePm2, situe, deuxMarches, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length, excl: excl.size};
 };
 
 /* ---------- géométrie ---------- */
