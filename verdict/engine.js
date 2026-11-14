@@ -86,11 +86,20 @@ VA.sujet = function (P) {
   const A = P.annonce || {}; const S = A.surface || null; const pt = [0, 0];
   // candidats : bâtiments à moins de 45 m du point (ou le contenant) ; on écarte les abris (< 2,8 m) et on préfère les logements et la surface qui colle
   const distTo = b => { let dmin = Math.hypot(b.c[0], b.c[1]); b.g.forEach(r => { const rr = closed(r); if (inPoly(pt, rr)) dmin = 0; rr.forEach(p => { dmin = Math.min(dmin, Math.hypot(p[0], p[1])); }); }); return dmin; };
-  const cands = B.map(b => ({b, d: distTo(b)})).filter(x => x.d <= 45);
+  const parcels = P.carte.parcels || [];
+  const parcelOf = c => parcels.find(p => p.g.some(r => inPoly(c, closed(r))));
+  const pPoint = parcelOf(pt);
+  // bâtiments à moins de 45 m, plus tous ceux de la parcelle du point et de la parcelle du bâtiment résidentiel le plus proche (copropriétés horizontales : le point d'adresse est souvent sur l'accès)
+  const withD = B.map(b => ({b, d: distTo(b)}));
+  const near = withD.filter(x => x.d <= 45);
+  const nearestRes = withD.filter(x => x.b.h >= 2.8 && (x.b.nl > 0 || /r[ée]sidentiel|indiff/i.test(x.b.u || ''))).sort((a, b) => a.d - b.d)[0];
+  const pRes = nearestRes ? parcelOf(nearestRes.b.c) : null;
+  const inParcel = p => p && p.m2 < 30000 ? withD.filter(x => p.g.some(r => inPoly(x.b.c, closed(r)))) : [];
+  const cands = []; const seen = new Set(); near.concat(inParcel(pPoint), inParcel(pRes)).forEach(x => { if (!seen.has(x.b)) { seen.add(x.b); cands.push(x); } });
   if (!cands.length) return (P._sujet = null);
   const scored = cands.map(x => { const b = x.b; const emp = Math.abs(area(closed(b.g[0]))); const niv = b.et || (b.h ? Math.max(1, Math.round(b.h / 3)) : 1); const shab = emp * niv;
-    let s = x.d / 45; if (!b.h || b.h < 2.8) s += 2; if (emp < 25) s += 1.5; if (b.u && /r[ée]sidentiel/i.test(b.u)) s -= 0.4; if (b.nl > 0) s -= 0.3; if (b.u && /annexe|agricole|industriel|commercial/i.test(b.u)) s += 1; if (S && shab > 20) s += Math.min(2, Math.abs(Math.log(shab / S)) * 0.8);
-    return {b, s}; }).sort((a, b) => a.s - b.s);
+    let s = Math.min(1.2, x.d / 200); if (x.d <= 15) s -= 1.0; if (!b.h || b.h < 2.8) s += 2; if (emp < 25) s += 1.5; if (b.u && /r[ée]sidentiel/i.test(b.u)) s -= 0.4; if (b.nl > 0) s -= 0.3; if (b.u && /annexe|agricole|industriel|commercial/i.test(b.u)) s += 1; if (S && shab > 20) s += Math.min(2.5, Math.abs(Math.log(shab / S)) * 1.6);
+    return {b, s, d: x.d}; }).sort((a, b) => a.s - b.s);
   return (P._sujet = scored[0].b);
 };
 VA.parcelleDe = function (P, b) { if (!b) return null; const c = b.c; return (P.carte.parcels || []).find(p => p.g.some(r => inPoly(c, closed(r)))) || null; };
