@@ -13,7 +13,8 @@ const dateFr = d => { if (!d) return '–'; const x = new Date(d); return isNaN(
 const monthFr = d => { if (!d) return '–'; const x = new Date(d); return isNaN(x) ? String(d) : x.toLocaleDateString('fr-FR', {month: 'short', year: 'numeric'}); };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]);
 const titleCase = s => String(s || '').toLowerCase().replace(/(^|[\s'’-])\S/g, c => c.toUpperCase());
-const niceAdr = s => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.replace(/\b(Avenue|Av\.?)\b/gi, 'av.').replace(/\bBoulevard\b/gi, 'bd').replace(/\bChemin\b/gi, 'ch.').replace(/\bImpasse\b/gi, 'imp.').replace(/\bAllée\b/gi, 'all.').replace(/\bRoute\b/gi, 'rte').replace(/\bPlace\b/gi, 'pl.'); };
+const ABR = {av: 'av.', ave: 'av.', avenue: 'av.', bd: 'bd', boulevard: 'bd', che: 'ch.', chem: 'ch.', chemin: 'ch.', imp: 'imp.', impasse: 'imp.', all: 'all.', allee: 'all.', 'allée': 'all.', rte: 'rte', route: 'rte', pl: 'pl.', place: 'pl.', mte: 'montée', montee: 'montée', trav: 'traverse', crs: 'cours', sq: 'square', lot: 'lot.', res: 'rés.', ham: 'hameau', qua: 'quai', esp: 'esplanade', prom: 'prom.', sen: 'sentier', vla: 'villa', pas: 'passage', dom: 'domaine', cite: 'cité', art: 'anc. rte', vc: 'voie communale', rle: 'ruelle', cor: 'corniche', plt: 'plateau', car: 'carrefour', ptte: 'placette', vge: 'village', zac: 'ZAC', rpt: 'rond-point', qu: 'quartier', fg: 'faubourg', gr: 'grande rue'};
+const niceAdr = s => { s = String(s || '').replace(/\s+/g, ' ').trim(); const parts = s.split(' '); return parts.map((w, i) => { const k = w.toLowerCase().replace(/\.$/, ''); if (k === 'art' && /^anc/i.test(parts[i + 1] || '')) return ''; if (ABR[k] && (i === 0 || /^\d/.test(parts[i - 1]) || i === 1)) return ABR[k]; if (i > 0 && /^(de|du|des|la|le|les|l'|d'|et|à|au|aux|sur|sous)$/i.test(w)) return w.toLowerCase(); return w; }).filter(Boolean).join(' '); };
 const streetOnly = s => String(s || '').replace(/^\d+\s?(bis|ter|[a-z])?\s+/i, '');
 const med = a => { a = (a || []).filter(v => v != null && !isNaN(v)).slice().sort((x, y) => x - y); return a.length ? (a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2) : null; };
 const pctl = (arr, p) => { const a = arr.slice().sort((x, y) => x - y); if (!a.length) return null; const i = (a.length - 1) * p; const lo = Math.floor(i), hi = Math.ceil(i); return a[lo] + (a[hi] - a[lo]) * (i - lo); };
@@ -113,7 +114,8 @@ VA.orientation = function (b) {
   if ((b.c[0] - mx) * nx + (b.c[1] - my) * ny > 0) { nx = -nx; ny = -ny; }
   const az = (Math.atan2(nx, ny) * 180 / Math.PI + 360) % 360;
   const n = ['nord', 'nord-nord-est', 'nord-est', 'est-nord-est', 'est', 'est-sud-est', 'sud-est', 'sud-sud-est', 'sud', 'sud-sud-ouest', 'sud-ouest', 'ouest-sud-ouest', 'ouest', 'ouest-nord-ouest', 'nord-ouest', 'nord-nord-ouest'];
-  return {az: Math.round(az), lib: n[Math.round(az / 22.5) % 16], L: Math.round(best.L)};
+  const lib = n[Math.round(az / 22.5) % 16];
+  return {az: Math.round(az), lib, art: (/^(est|ouest)/.test(lib) ? 'à l’' : 'au ') + lib, L: Math.round(best.L)};
 };
 
 /* ---------- soleil ---------- */

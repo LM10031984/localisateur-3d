@@ -102,7 +102,7 @@ function secOu(P, est, ctx) {
         ${d.copro ? `<dt>Copropriété</dt><dd class="mono">${esc(d.copro)}</dd>` : ''}
         ${adr.distBlur != null && P.centre.source !== 'blur' ? `<dt>Écart au portail</dt><dd>${fmt(adr.distBlur)} m du centre du disque flouté</dd>` : ''}
         ${P.parcelle ? `<dt>Parcelle</dt><dd>${esc(P.parcelle.sec)} ${esc(String(P.parcelle.num).replace(/^0+/, ''))} · ${fmt(P.parcelle.m2)} m²${(() => { const pb = VA.parcelleDe(P, bS); return pb && pb.id !== P.parcelle.id ? ` (point de l’adresse) · bâtiment sur ${esc(pb.sec)} ${esc(String(pb.num).replace(/^0+/, ''))} · ${fmt(pb.m2)} m²` : ''; })()}</dd>` : ''}
-        ${bS ? `<dt>Bâtiment (IGN)</dt><dd>${bS.h ? bS.h + ' m de haut' : 'hauteur inconnue'}${bS.nl ? ' · ' + bS.nl + ' logement' + (bS.nl > 1 ? 's' : '') : ''}${bS.zs != null ? ' · sol à ' + bS.zs + ' m' : ''}${ori ? ' · façade principale au ' + ori.lib : ''}</dd>` : ''}
+        ${bS ? `<dt>Bâtiment (IGN)</dt><dd>${bS.h ? bS.h + ' m de haut' : 'hauteur inconnue'}${bS.nl ? ' · ' + bS.nl + ' logement' + (bS.nl > 1 ? 's' : '') : ''}${bS.zs != null ? ' · sol à ' + bS.zs + ' m' : ''}${ori ? ' · grand côté ' + ori.art : ''}</dd>` : ''}
       </dl>
       ${adr.candidats && adr.candidats.length > 1 ? `<details class="pro" style="margin-top:8px"><summary>${adr.candidats.length - 1} autre${adr.candidats.length > 2 ? 's' : ''} DPE candidat${adr.candidats.length > 2 ? 's' : ''}</summary><div class="tbl"><table><thead><tr><th>Score</th><th>Adresse</th><th>Date</th><th>kWh</th><th>GES</th><th>m²</th><th>Dist.</th></tr></thead><tbody>${adr.candidats.slice(1).map(c => `<tr><td class="mono">${c.score}</td><td>${esc(niceAdr(c.adr))}</td><td class="mono">${dateFr(c.date)}</td><td class="mono">${fr1(c.kwh)}</td><td class="mono">${fr1(c.ges)}</td><td class="mono">${fmt(c.surface)}</td><td class="mono">${c.d != null ? fmt(c.d) + ' m' : '–'}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
     </div>` : `<div class="card"><span class="kicker">Position</span><h3 style="margin:6px 0 8px">${A.mode === 'adresse' ? esc(P.centre.label || A.q) : 'Adresse non retrouvée'}</h3>
@@ -178,7 +178,7 @@ function secSoleil(P, est, ctx) {
   const rowsTbl = Object.values(S.SEASONS).map(s => { const p = S.plages(s); return `<tr><td><b>${s.court}</b><br><small>${s.lab}</small></td><td class="mono">${p.lever ? S.hhmm(p.lever) : '–'} · ${p.coucher ? S.hhmm(p.coucher) : '–'}</td><td>${bS ? p.txt : '<span class="muted">bâtiment non identifié</span>'}</td></tr>`; }).join('');
   return `<section id="soleil" class="sec"><div class="sec-h"><span class="n">04</span><h2>Soleil et ombres, heure par heure</h2><p>Ce que le vendeur appelle « exposition », calculé : position du soleil, hauteur des bâtiments (IGN), relief entre voisins.</p></div>
     <div class="card">
-      <div class="row" style="gap:8px;margin-bottom:6px">${ori ? `<span class="chip">Façade principale au <b>&nbsp;${ori.lib}</b> (${ori.az}°)</span>` : ''}${A.expo ? `<span class="chip ${ori && VA.expoOk(ori.az, A.expo) ? 'ok' : 'warn'}">Annonce : « ${esc(A.expo)} »${ori ? (VA.expoOk(ori.az, A.expo) ? ' · cohérent' : ' · à vérifier') : ''}</span>` : ''}${bS && bS.h ? `<span class="chip">Hauteur ${bS.h} m</span>` : ''}</div>
+      <div class="row" style="gap:8px;margin-bottom:6px">${ori ? `<span class="chip">Grand côté du bâtiment <b>&nbsp;${ori.art}</b> (${ori.az}°)</span>` : ''}${A.expo ? `<span class="chip ${ori && VA.expoOk(ori.az, A.expo) ? 'ok' : 'warn'}">Annonce : « ${esc(A.expo)} »${ori ? (VA.expoOk(ori.az, A.expo) ? ' · plausible' : ' · à vérifier sur place') : ''}</span>` : ''}${bS && bS.h ? `<span class="chip">Hauteur ${bS.h} m</span>` : ''}</div>
       <div class="sun-ctl noprint">
         <div class="seg" role="group" aria-label="Saison" id="sunSeason"><button type="button" aria-pressed="true" data-s="hiver">21 déc.</button><button type="button" aria-pressed="false" data-s="equinoxe">21 mars</button><button type="button" aria-pressed="false" data-s="ete">21 juin</button></div>
         <label class="sun-hour"><span class="mono" id="sunTime">14 h 00</span><input type="range" id="sunHour" min="6" max="20" step="0.25" value="14" aria-label="Heure"></label>
@@ -189,7 +189,7 @@ function secSoleil(P, est, ctx) {
       <p class="note" style="margin-top:8px">Ombres calculées sur les hauteurs de la BD TOPO, sol plat autour de chaque bâtiment ; la différence d’altitude entre le bien et ses voisins est prise en compte pour la terrasse. Le relief lointain et la végétation ne sont pas mesurés ici. Heures légales (Paris).</p>
     </div></section>`;
 }
-VA.expoOk = (az, expo) => { const e = (expo || '').toLowerCase(); const want = e.includes('sud') && e.includes('ouest') ? 225 : e.includes('sud') && e.includes('est') ? 135 : e.includes('sud') ? 180 : e.includes('nord') && e.includes('ouest') ? 315 : e.includes('nord') && e.includes('est') ? 45 : e.includes('ouest') ? 270 : e.includes('est') ? 90 : e.includes('nord') ? 0 : null; if (want == null) return true; const d = Math.abs(((az - want) % 360 + 540) % 360 - 180); return d <= 60; };
+VA.expoOk = (az, expo) => { const e = (expo || '').toLowerCase(); const want = e.includes('sud') && e.includes('ouest') ? 225 : e.includes('sud') && e.includes('est') ? 135 : e.includes('sud') ? 180 : e.includes('nord') && e.includes('ouest') ? 315 : e.includes('nord') && e.includes('est') ? 45 : e.includes('ouest') ? 270 : e.includes('est') ? 90 : e.includes('nord') ? 0 : null; if (want == null) return true; const d = Math.abs(((az - want) % 360 + 540) % 360 - 180); return d <= 90; };
 
 function secRisques(P) {
   const R = P.risques || {}; const cat = R.catnat || {};
@@ -214,7 +214,7 @@ function secRisques(P) {
 
 function secCopro(P, ctx) {
   const C = VA.copros(P); const mine = C.find(c => c.sujet); const A = P.annonce;
-  const V = VA.ventes(P); const pid = P.parcelle && P.parcelle.id; const ventesParc = pid ? V.filter(v => v.pc === pid) : [];
+  const V = VA.ventes(P); const pB = VA.parcelleDe(P, VA.sujet(P)); const pids = [pB && pB.id, P.parcelle && P.parcelle.id].filter(Boolean); const ventesParc = V.filter(v => pids.includes(v.pc));
   const finProche = f => f && (new Date(f).getTime() - Date.now()) < 365 * 864e5;
   const row = c => `<tr class="${c.sujet ? 'bien' : ''}"><td>${esc(c.nom || '—')}<br><span class="small muted num-adr">${esc(c.adr)}</span></td><td class="r mono">${c.lotsH}/${c.lots}</td><td class="mono">${esc(c.per)}</td><td>${esc(c.syndic || c.typeSyndic)}</td><td class="mono ${finProche(c.fin) ? 'warn' : ''}">${c.fin ? dateFr(c.fin) : '–'}</td><td class="r mono">${Math.round(Math.hypot(c.x, c.y))} m</td></tr>`;
   if (!C.length && !(A.copro && A.copro.is)) return '';
@@ -264,7 +264,7 @@ function secProspecter(P, est, ctx) {
   const efg = D.filter(d => 'EFG'.includes(d.l) && d.date < since);
   const elec = efg.filter(d => d.en === 'E' && d.date < '2026-01-01');
   const coproFin = C.filter(c => c.fin && (new Date(c.fin).getTime() - Date.now()) < 365 * 864e5 && c.lotsH >= 5);
-  const row = d => `<tr><td class="mono">${dateFr(d.date)}</td><td class="num-adr">${esc(niceAdr(d.adr))}${d.res || d.comp ? '<br><span class="small muted">' + esc([d.res, d.comp].filter(Boolean).join(' · ')) + '</span>' : ''}</td><td>${d.t === 'm' ? 'maison' : 'appt'}${d.et >= 0 ? ' · ét. ' + d.et : ''}</td><td class="r mono">${d.s} m²</td><td>${dpeClass(d.l)}</td><td>${esc(energieLib(d.en))}</td><td class="r mono">${d.cout ? eur(d.cout) : '–'}</td><td class="r mono">${Math.round(Math.hypot(d.x, d.y))} m</td></tr>`;
+  const row = d => `<tr><td class="mono">${dateFr(d.date)}</td><td class="num-adr">${esc(niceAdr(d.adr))}${d.res || d.comp ? '<br><span class="small muted">' + esc([d.res, d.comp].filter(Boolean).join(' · ')) + '</span>' : ''}</td><td>${d.t === 'm' ? 'maison' : d.t === 'i' ? 'immeuble (DPE collectif)' : 'appt'}${d.et >= 0 ? ' · ét. ' + d.et : ''}</td><td class="r mono">${d.s ? d.s + ' m²' : '–'}</td><td>${dpeClass(d.l)}</td><td>${esc(energieLib(d.en))}</td><td class="r mono">${d.cout ? eur(d.cout) : '–'}</td><td class="r mono">${Math.round(Math.hypot(d.x, d.y))} m</td></tr>`;
   const head = '<thead><tr><th>DPE</th><th>Adresse</th><th>Type</th><th class="r">Surface</th><th>Classe</th><th>Énergie</th><th class="r">Facture</th><th class="r">Dist.</th></tr></thead>';
   return `<section id="prospecter" class="sec pro"><div class="sec-h"><span class="n">09</span><h2>Prospecter autour</h2><p>Des adresses, jamais des noms : pour le courrier, le passage et le flyer. Un DPE récent est un signal de projet (vente ou location), pas une certitude.</p></div>
     <div class="grid g4" style="margin-bottom:14px">
@@ -354,7 +354,7 @@ VA.wireDossier = function (root, P, ctx) {
   // acheteur
   const bT = root.querySelector('#bTiles');
   if (bT) { const upd = () => { const prix = +root.querySelector('#bPrix').value || P.annonce.prix; const c = VA.calcAcheteur(prix, +root.querySelector('#bTaux').value, +root.querySelector('#bDuree').value, +root.querySelector('#bApport').value, P.annonce.neuf);
-      bT.innerHTML = `<div class="tile"><span class="k">Mensualité</span><span class="v">${eur(c.mens)}</span><span class="s">sur ${root.querySelector('#bDuree').value} ans à ${root.querySelector('#bTaux').value} %</span></div><div class="tile"><span class="k">Coût total</span><span class="v">${kE(c.total)}</span><span class="s">dont frais ${eur(c.frais)}</span></div><div class="tile"><span class="k">À emprunter</span><span class="v">${kE(c.emprunt)}</span><span class="s">intérêts ${kE(c.cout)}</span></div><div class="tile"><span class="k">Revenus nécessaires</span><span class="v">${eur(c.revenu)}</span><span class="s">par mois, à 35 % d’endettement</span></div>`; };
+      bT.innerHTML = `<div class="tile"><span class="k">Mensualité</span><span class="v">${eur(c.mens)}</span><span class="s">sur ${root.querySelector('#bDuree').value} ans à ${fr1(+root.querySelector('#bTaux').value)} %</span></div><div class="tile"><span class="k">Coût total</span><span class="v">${kE(c.total)}</span><span class="s">dont frais ${eur(c.frais)}</span></div><div class="tile"><span class="k">À emprunter</span><span class="v">${kE(c.emprunt)}</span><span class="s">intérêts ${kE(c.cout)}</span></div><div class="tile"><span class="k">Revenus nécessaires</span><span class="v">${eur(c.revenu)}</span><span class="s">par mois, à 35 % d’endettement</span></div>`; };
     ['#bPrix', '#bTaux', '#bDuree', '#bApport'].forEach(s => root.querySelector(s).addEventListener('input', upd)); upd(); }
   // ajustements
   const adjList = root.querySelector('#adjList');
