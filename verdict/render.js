@@ -144,7 +144,7 @@ function secPrix(P, est, ctx) {
       ${est.top8.length > 5 ? `<details><summary>Sensibilité : avec 8 comparables, ${pct(est.ecart8)} (médiane ${m2(est.m8)})${Math.abs((est.ecart8 || 0) - (est.ecart || 0)) > 0.06 ? ' — le verdict bouge, la règle du secteur reste 5 comparables' : ''}</summary><div class="tbl" style="margin-top:8px"><table>${head}<tbody>${est.top8.slice(5).map((c, i) => comp(c, i + 5, false)).join('')}</tbody></table></div></details>` : ''}
     </div>
     <div class="grid g2" style="margin-top:16px">
-      <div class="card"><div class="sec-h"><h3>Médianes annuelles à 800 m</h3><p>Le secteur, année par année. Recalage : chaque vente est ramenée au niveau de ${est.lastYear}.</p></div>${VA.chartMedianes(P, est)}</div>
+      <div class="card"><div class="sec-h"><h3>Médianes annuelles à 800 m</h3><p>Le secteur, année par année. Recalage : tendance lissée de ${pct(est.slope, 1)} par an, chaque vente ramenée au niveau de ${est.lastYear}.</p></div>${VA.chartMedianes(P, est)}</div>
       <div class="card"><div class="sec-h"><h3>Toutes les ventes du type, recalées</h3><p>Prix au m² selon la surface. La fourchette « 8 cas sur 10 » vient de cette dispersion (${fr1(est.lo * 100)} % → ${fr1(est.hi * 100)} % de la médiane).</p></div>${VA.chartNuage(P, est)}</div>
     </div>${adjHtml}</section>`;
 }

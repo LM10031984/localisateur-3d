@@ -23,7 +23,10 @@ const setNotes = (id, n) => { const a = LS.get('notes', {}); a[id] = Object.assi
 async function saveDossier(P) {
   const A = P.annonce; const id = A.id || ('d-' + Date.now().toString(36));
   A.id = id;
-  const est = VA.estimer(P, adjOf(id));
+  let est = VA.estimer(P, adjOf(id));
+  // adresses des comparables quand la source ne les donne pas (repli Cerema) : géocodage inverse BAN
+  if (est && est.top8 && P.marche && P.marche.ventes) { const need = est.top8.filter(c => !c.a); if (need.length) { const KX = 111320 * Math.cos(P.centre.lat * Math.PI / 180);
+    await Promise.all(need.map(async c => { const pr = await VA.reverse(P.centre.lat + c.y / 111200, P.centre.lon + c.x / KX); if (pr) { const row = P.marche.ventes.find(v => v[0] === c.x && v[1] === c.y && v[6] === c.d && v[4] === c.s); if (row) row[8] = ((pr.housenumber ? pr.housenumber + ' ' : '') + (pr.street || pr.name || '')).trim(); } })); est = VA.estimer(P, adjOf(id)); } }
   await DB.set(id, P);
   const m = meta().filter(x => x.id !== id);
   m.unshift({id, titre: VA.titreDossier(P), ville: A.ville || P.centre.ville, cp: A.cp || P.centre.cp, prix: A.prix, surface: A.surface, type: VA.typeBien(P), src: A.src || null, portail: A.portail || null, date: P.genere, adr: P.adresse && P.adresse.trouvee ? P.adresse.dpe.adr : null, certitude: P.adresse && P.adresse.certitude, valeur: est && est.valeur, ecart: est && est.ecart, verdict: est && est.libelle && est.libelle.t, mode: A.mode || 'annonce'});

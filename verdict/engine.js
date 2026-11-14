@@ -38,14 +38,20 @@ VA.estimer = function (P, adj) {
   const yrs = M.years || []; const cnt = M.CNT[type] || {}, medT = M.MED[type] || {}; const other = type === 'M' ? 'A' : 'M';
   const okYears = yrs.filter(y => medT[y]); const lastYear = okYears.length ? Math.max(...okYears) : (yrs.length ? Math.max(...yrs) : new Date().getFullYear());
   const ref = medT[lastYear] || M.allMed[type] || null;
-  const fac = y => { if (medT[y] && ref) return ref / medT[y]; const mo = M.MED[other] || {}; const lo = Math.max(...Object.keys(mo).filter(k => mo[k]).map(Number), -1); if (mo[y] && lo > 0 && mo[lo]) return mo[lo] / mo[y]; return 1; };
+  // tendance lissée : droite des logarithmes des médianes annuelles, pondérée par le nombre de ventes (évite le bruit d'une année à 20 ventes)
+  const slopeOf = tp => { const mm = M.MED[tp] || {}, cc = M.CNT[tp] || {}; const pts = yrs.filter(y => mm[y]).map(y => ({x: y, y: Math.log(mm[y]), w: cc[y] || 1})); if (pts.length < 3) return null;
+    const W = pts.reduce((a, p) => a + p.w, 0), mx = pts.reduce((a, p) => a + p.w * p.x, 0) / W, my = pts.reduce((a, p) => a + p.w * p.y, 0) / W; const sxx = pts.reduce((a, p) => a + p.w * (p.x - mx) ** 2, 0); if (!sxx) return null; return pts.reduce((a, p) => a + p.w * (p.x - mx) * (p.y - my), 0) / sxx; };
+  let slope = slopeOf(type); if (slope == null) slope = slopeOf(other); if (slope == null) slope = 0; slope = clamp(slope, -0.08, 0.10);
+  const fac = y => Math.exp(slope * (lastYear - y));
   const all = rows.filter(r => r.t === type && ageY(r.d) <= 6.5).map(r => Object.assign({}, r, {f: fac(+r.d.slice(0, 4))}));
   all.forEach(r => r.pm2r = r.pm2 * r.f);
   if (!S) return {type, S: null, n: all.length, lastYear, ref};
+  const pieces = A.pieces || null;
   const cands = all.filter(r => r.s / S >= 0.55 && r.s / S <= 1.8).map(r => {
-    let score = Math.abs(Math.log(r.s / S)) * 3 + r.km / 400 + ageY(r.d) * 0.45;
+    let score = Math.abs(Math.log(r.s / S)) * 3 + r.km / 300 + ageY(r.d) * 0.6;
     if (type === 'M') { if (T > 0 && r.g > 0) score += Math.abs(Math.log(r.g / T)) * 0.4; else if (r.g === 0) score += 0.3; }
-    if (r.nl > 2) score += 0.4;
+    if (pieces && r.n) score += Math.min(1, Math.abs(r.n - pieces) * 0.15);
+    if (r.nl > 2) score += 0.6;
     return Object.assign({}, r, {score}); }).sort((a, b) => a.score - b.score);
   const top5 = cands.slice(0, 5), top8 = cands.slice(0, 8);
   const m5 = med(top5.map(c => c.pm2r)), m8 = med(top8.map(c => c.pm2r));
@@ -61,7 +67,7 @@ VA.estimer = function (P, adj) {
   const ecartAj = (A.prix && valeurAj) ? A.prix / valeurAj - 1 : null;
   const ecart8 = (A.prix && m8) ? A.prix / (m8 * S) - 1 : null;
   const lib = e => e == null ? {t: 'Pas assez de ventes', c: 'muted'} : e <= -0.08 ? {t: 'Sous le marché', c: 'ok'} : e <= 0.05 ? {t: 'Dans le marché', c: 'acc'} : e <= 0.12 ? {t: 'Un peu au-dessus', c: 'warn'} : {t: 'Au-dessus du marché', c: 'bad'};
-  return {type, S, T, lastYear, ref, fac, all, cands, top5, top8, m5, m8, valeur, valeurAj, lo, hi, fourchette: valeur ? [Math.round(valeur * lo / 1000) * 1000, Math.round(valeur * hi / 1000) * 1000] : null,
+  return {type, S, T, lastYear, ref, fac, slope, all, cands, top5, top8, m5, m8, valeur, valeurAj, lo, hi, fourchette: valeur ? [Math.round(valeur * lo / 1000) * 1000, Math.round(valeur * hi / 1000) * 1000] : null,
     cv, fiab, tot, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length};
 };
 

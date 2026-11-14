@@ -142,8 +142,42 @@ async function collect(input, onStep) {
     P.carte.parcels = box.features.slice(0, 800).map(f => ({id: f.properties.idu, sec: f.properties.section, num: f.properties.numero, m2: f.properties.contenance, g: geomRings(f.geometry).map(poly => ring2off(poly[0]))}));
   }));
 
-  /* Ventes (Cerema DVF+) */
-  tasks.push(step('Ventes DVF', async () => {
+  /* Ventes : DVF Etalab (adresses, pièces, coordonnées), repli Cerema DVF+ */
+  const finirVentes = (sales, source) => {
+    const years = [...new Set(sales.map(x => +x.d.slice(0, 4)))].sort();
+    const MED = {A: {}, M: {}}, CNT = {A: {}, M: {}};
+    for (const t of ['A', 'M']) for (const y of years) { const f = sales.filter(x => x.t == t && +x.d.slice(0, 4) == y); CNT[t][y] = f.length; MED[t][y] = f.length >= 5 ? med(f.map(x => x.p / x.s)) : null; }
+    const byDate = (a, b) => a.d < b.d ? 1 : -1;
+    const near = sales.filter(x => x.km <= R300).sort(byDate).slice(0, 250);
+    const far = sales.filter(x => x.km > R300).sort(byDate).slice(0, 400);
+    P.marche = {source, years, MED, CNT, n800: sales.length, n300: near.length, dvfLast: sales.map(x => x.d).sort().pop() || null,
+      ventes: near.concat(far).map(x => [x.o[0], x.o[1], x.t, Math.round(x.p / 1000), Math.round(x.s), x.n || 0, x.d, x.t == 'M' ? x.g : 0, (x.a || '').replace(/[;,]/g, ' '), x.km, x.pc || '', x.nl || 1]),
+      allMed: {A: med(sales.filter(x => x.t == 'A').map(x => x.p / x.s)), M: med(sales.filter(x => x.t == 'M').map(x => x.p / x.s))}};
+  };
+  const ventesEtalab = async () => {
+    const sec = await j(`https://cadastre.data.gouv.fr/bundler/cadastre-etalab/communes/${insee}/geojson/sections`, null, 20000);
+    const near = [];
+    for (const s of sec.features) { const pts = []; const flat = a => typeof a[0] == 'number' ? pts.push(a) : a.forEach(flat); flat(s.geometry.coordinates);
+      if (pts.some(p => dist(lat0, lon0, p[1], p[0]) < R800)) near.push(s.properties.prefixe + s.properties.code); }
+    if (!near.length) throw new Error('aucune section à 800 m');
+    let rows = [], fails = 0;
+    await Promise.all(near.map(async s => { try { const r = await j(`https://app.dvf.etalab.gouv.fr/api/mutations3/${insee}/${s}`, null, 25000); rows = rows.concat(r.mutations || []); } catch (e) { fails++; } }));
+    if (fails && fails >= near.length / 2) throw new Error('API DVF Etalab indisponible');
+    const M = {}; rows.forEach(r => (M[r.id_mutation] = M[r.id_mutation] || []).push(r));
+    const sales = [];
+    for (const g of Object.values(M)) { const r0 = g[0]; if (r0.nature_mutation != 'Vente') continue;
+      const L = {}; g.forEach(r => { if (r.type_local == 'Appartement' || r.type_local == 'Maison') L[r.type_local + r.id_parcelle + (r.lot1_numero || '') + r.surface_reelle_bati] = r; });
+      const ls = Object.values(L); if (ls.length != 1) continue; const l = ls[0]; const la = +l.latitude, lo = +l.longitude; if (!la) continue;
+      const d = dist(lat0, lon0, la, lo); if (d > R800) continue; const s = +l.surface_reelle_bati, p = +r0.valeur_fonciere; if (s < 15 || p < 30000) continue;
+      const pm = p / s; if (pm < 1000 || pm > 25000) continue;
+      const tg = Object.values(g.reduce((o, r) => { if (+r.surface_terrain > 0) o[r.id_parcelle + '|' + (r.code_nature_culture || '')] = +r.surface_terrain; return o; }, {})).reduce((a, b) => a + b, 0);
+      const n = (l.adresse_numero || '').replace('.0', ''); const voie = (l.adresse_nom_voie || '').toLowerCase().replace(/(^|\s|-|')\S/g, c => c.toUpperCase());
+      const nl = new Set(g.map(r => r.id_parcelle + '|' + (r.lot1_numero || '') + '|' + r.type_local)).size;
+      sales.push({d: r0.date_mutation, p, t: l.type_local[0], s, n: +l.nombre_pieces_principales || 0, a: ((/^9\d{3}$/.test(n) ? '' : n) + ' ' + voie).trim(), o: off(la, lo), km: Math.round(d), g: Math.round(tg), pc: l.id_parcelle, nl}); }
+    if (!sales.length) throw new Error('aucune vente exploitable');
+    finirVentes(sales, 'DVF Etalab (app.dvf.etalab.gouv.fr)');
+  };
+  const ventesCerema = async () => {
     const dLa = R800 / KY, dLo = R800 / KX;
     const y0 = new Date().getFullYear() - 6;
     let u = `https://apidf-preprod.cerema.fr/dvf_opendata/geomutations/?in_bbox=${(lon0 - dLo).toFixed(6)},${(lat0 - dLa).toFixed(6)},${(lon0 + dLo).toFixed(6)},${(lat0 + dLa).toFixed(6)}&anneemut_min=${y0}&codtypbien=111,121&page_size=500`;
@@ -155,23 +189,17 @@ async function collect(input, onStep) {
       if (p.libnatmut !== 'Vente' || p.vefa) return;
       const t = String(p.codtypbien).startsWith('11') ? 'M' : String(p.codtypbien).startsWith('12') ? 'A' : null; if (!t) return;
       const price = num(p.valeurfonc), s = num(p.sbati); if (!price || !s || s < 15 || price < 30000) return;
-      const m2 = price / s; if (m2 < 1000 || m2 > 25000) return;
+      const pm = price / s; if (pm < 1000 || pm > 25000) return;
       const rings = geomRings(f.geometry); if (!rings.length) return;
       const pts = []; rings.forEach(poly => poly[0].forEach(q => pts.push(q)));
       const lo = pts.reduce((a, q) => a + q[0], 0) / pts.length, la = pts.reduce((a, q) => a + q[1], 0) / pts.length;
       const d = dist(lat0, lon0, la, lo); if (d > R800) return;
-      sales.push({d: p.datemut, p: price, t, s, g: Math.round(num(p.sterr) || 0), o: off(la, lo), km: Math.round(d), pc: (p.l_idpar || [])[0] || '', pcs: (p.l_idpar || []).slice(0, 4), nl: p.nblocmut || 1});
+      sales.push({d: p.datemut, p: price, t, s, g: Math.round(num(p.sterr) || 0), o: off(la, lo), km: Math.round(d), pc: (p.l_idpar || [])[0] || '', nl: p.nblocmut || 1, n: 0, a: ''});
     });
-    const years = [...new Set(sales.map(x => +x.d.slice(0, 4)))].sort();
-    const MED = {A: {}, M: {}}, CNT = {A: {}, M: {}};
-    for (const t of ['A', 'M']) for (const y of years) { const f = sales.filter(x => x.t == t && +x.d.slice(0, 4) == y); CNT[t][y] = f.length; MED[t][y] = f.length >= 5 ? med(f.map(x => x.p / x.s)) : null; }
-    const byDate = (a, b) => a.d < b.d ? 1 : -1;
-    const near = sales.filter(x => x.km <= R300).sort(byDate).slice(0, 250);
-    const far = sales.filter(x => x.km > R300).sort(byDate).slice(0, 350);
-    P.marche = {source: 'Cerema DVF+ (open data)', years, MED, CNT, n800: sales.length, n300: near.length, dvfLast: sales.map(x => x.d).sort().pop() || null,
-      ventes: near.concat(far).map(x => [x.o[0], x.o[1], x.t, Math.round(x.p / 1000), Math.round(x.s), 0, x.d, x.t == 'M' ? x.g : 0, '', x.km, x.pc, x.nl]),
-      allMed: {A: med(sales.filter(x => x.t == 'A').map(x => x.p / x.s)), M: med(sales.filter(x => x.t == 'M').map(x => x.p / x.s))}};
-  }));
+    if (!sales.length) throw new Error('aucune vente exploitable');
+    finirVentes(sales, 'Cerema DVF+ (open data)');
+  };
+  tasks.push(step('Ventes DVF', async () => { try { await ventesEtalab(); } catch (e) { console.warn('Etalab KO, repli Cerema', e); await ventesCerema(); P.marche.repli = String(e.message || e); } }));
 
   /* DPE du quartier */
   tasks.push(step('DPE du quartier', async () => {
@@ -240,7 +268,9 @@ async function collect(input, onStep) {
   /* Vivre ici (OpenStreetMap) */
   tasks.push(step('Vivre ici', async () => {
     const q = `[out:json][timeout:12];(node(around:700,${lat0},${lon0})[amenity~"^(school|kindergarten|college|pharmacy|doctors|hospital|post_office|bank|restaurant|cafe|bar)$"];node(around:700,${lat0},${lon0})[shop~"^(supermarket|bakery|convenience|butcher|greengrocer|mall)$"];node(around:700,${lat0},${lon0})[highway=bus_stop];node(around:2000,${lat0},${lon0})[railway~"^(station|halt|tram_stop)$"];node(around:900,${lat0},${lon0})[leisure~"^(park|playground|sports_centre|pitch)$"];way(around:900,${lat0},${lon0})[leisure~"^(park|sports_centre)$"];node(around:3000,${lat0},${lon0})[natural=beach];way(around:3000,${lat0},${lon0})[natural=beach];);out center 300;`;
-    const r = await j('https://overpass-api.de/api/interpreter', {method: 'POST', body: 'data=' + encodeURIComponent(q)}, 20000);
+    let r = null, lastErr = null;
+    for (const ep of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter']) { try { r = await j(ep, {method: 'POST', body: 'data=' + encodeURIComponent(q)}, 12000); if (r && r.elements) break; } catch (e) { lastErr = e; r = null; } }
+    if (!r) throw lastErr || new Error('Overpass indisponible');
     const cat = t => (t.amenity === 'school' || t.amenity === 'kindergarten' || t.amenity === 'college') ? 'ecoles' : (t.amenity === 'pharmacy' || t.amenity === 'doctors' || t.amenity === 'hospital') ? 'sante' : t.shop ? 'commerces' : t.amenity ? 'cafes' : t.highway === 'bus_stop' ? 'bus' : t.railway ? 'gares' : t.leisure ? 'loisirs' : t.natural === 'beach' ? 'plage' : null;
     const out = {};
     r.elements.forEach(e => { const la = e.lat || (e.center && e.center.lat), lo = e.lon || (e.center && e.center.lon); if (!la) return; const tg = e.tags || {}; const c = cat(tg); if (!c) return;
