@@ -53,11 +53,15 @@ VA.estimer = function (P, adj) {
     if (pieces && r.n) score += Math.min(1, Math.abs(r.n - pieces) * 0.15);
     if (r.nl > 2) score += 0.6;
     return Object.assign({}, r, {score}); }).sort((a, b) => a.score - b.score);
-  const top5 = cands.slice(0, 5), top8 = cands.slice(0, 8);
+  // rejet des ventes aberrantes parmi les 12 plus ressemblantes (succession, vente de plusieurs lots, ruine…) : hors 60 %–150 % de leur médiane
+  const pool = cands.slice(0, 12); const mPool = med(pool.map(c => c.pm2r));
+  const kept = mPool ? cands.filter(c => c.pm2r >= mPool * 0.6 && c.pm2r <= mPool * 1.5) : cands;
+  const ecartes = mPool ? pool.filter(c => !(c.pm2r >= mPool * 0.6 && c.pm2r <= mPool * 1.5)) : [];
+  const top5 = kept.slice(0, 5), top8 = kept.slice(0, 8);
   const m5 = med(top5.map(c => c.pm2r)), m8 = med(top8.map(c => c.pm2r));
   const valeur = m5 ? Math.round(m5 * S / 1000) * 1000 : null;
   const allR = all.map(r => r.pm2r); const medAll = med(allR); let lo = 0.75, hi = 1.3;
-  if (allR.length >= 15 && medAll) { const ratios = allR.map(v => v / medAll); lo = clamp(pctl(ratios, 0.1), 0.6, 0.95); hi = clamp(pctl(ratios, 0.9), 1.05, 1.6); }
+  if (allR.length >= 15 && medAll) { const ratios = allR.map(v => v / medAll); lo = clamp(pctl(ratios, 0.1), 0.65, 0.95); hi = clamp(pctl(ratios, 0.9), 1.05, 1.4); }
   const mean = top5.length ? top5.reduce((a, c) => a + c.pm2r, 0) / top5.length : 0;
   const cv = top5.length > 1 ? Math.sqrt(top5.reduce((a, c) => a + (c.pm2r - mean) ** 2, 0) / top5.length) / mean : null;
   const fiab = (top5.length === 5 && cv != null && cv < 0.15 && top5[4].score < 2.4) ? 'bonne' : (top5.length >= 4 && cv != null && cv < 0.28) ? 'moyenne' : 'faible';
@@ -67,7 +71,7 @@ VA.estimer = function (P, adj) {
   const ecartAj = (A.prix && valeurAj) ? A.prix / valeurAj - 1 : null;
   const ecart8 = (A.prix && m8) ? A.prix / (m8 * S) - 1 : null;
   const lib = e => e == null ? {t: 'Pas assez de ventes', c: 'muted'} : e <= -0.08 ? {t: 'Sous le marché', c: 'ok'} : e <= 0.05 ? {t: 'Dans le marché', c: 'acc'} : e <= 0.12 ? {t: 'Un peu au-dessus', c: 'warn'} : {t: 'Au-dessus du marché', c: 'bad'};
-  return {type, S, T, lastYear, ref, fac, slope, all, cands, top5, top8, m5, m8, valeur, valeurAj, lo, hi, fourchette: valeur ? [Math.round(valeur * lo / 1000) * 1000, Math.round(valeur * hi / 1000) * 1000] : null,
+  return {type, S, T, lastYear, ref, fac, slope, all, cands, ecartes, top5, top8, m5, m8, valeur, valeurAj, lo, hi, fourchette: valeur ? [Math.round(valeur * lo / 1000) * 1000, Math.round(valeur * hi / 1000) * 1000] : null,
     cv, fiab, tot, ecart, ecartAj, ecart8, libelle: lib(ecart), libelleAj: lib(ecartAj), minmax5: top5.length ? [Math.min(...top5.map(c => c.pm2r)), Math.max(...top5.map(c => c.pm2r))] : null, medAll, n: all.length};
 };
 
