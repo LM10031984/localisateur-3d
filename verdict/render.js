@@ -61,7 +61,7 @@ function secHero(P, est, ctx) {
           <button class="btn-s" data-act="export">Dossier à envoyer (fichier)</button>
           ${A.src ? `<a class="btn btn-s" href="${esc(A.src)}" target="_blank" rel="noopener">Voir l’annonce</a>` : ''}
           ${A.src && !ctx.standalone ? `<button class="btn-s pro" data-act="refresh">Mettre à jour le prix</button>` : ''}
-          ${!ctx.standalone ? `<a class="btn btn-s pro" href="#rdv/${esc(ctx.id || '')}">Préparer le rendez-vous →</a>` : ''}
+          ${!ctx.standalone ? `<a class="btn btn-s pro" href="#rdv/${esc(ctx.id || '')}">Préparer le rendez-vous →</a><a class="btn btn-s pro" href="#pm/${esc(ctx.id || '')}">Point marché propriétaire</a>` : ''}
         </div>
       </div>
       <div class="card" style="display:flex;flex-direction:column;gap:8px">
@@ -99,7 +99,7 @@ function secOu(P, est, ctx) {
         <dt>Chauffage</dt><dd>${esc(energieLib(d.energie))}</dd>
         ${d.annee ? `<dt>Construction</dt><dd>${esc(d.annee)}</dd>` : ''}
         ${d.residence || d.complement ? `<dt>Complément</dt><dd>${esc([d.residence, d.complement].filter(Boolean).join(' · '))}</dd>` : ''}
-        ${d.copro ? `<dt>Copropriété</dt><dd class="mono">${esc(d.copro)}</dd>` : ''}
+        ${d.copro ? `<dt>Copropriété</dt><dd class="mono">${esc(d.copro)}</dd>` : adr.coproParAdresse ? `<dt>Copropriété</dt><dd>rapprochée par l’adresse (registre), à confirmer</dd>` : ''}
         ${adr.distBlur != null && P.centre.source !== 'blur' ? `<dt>Écart au portail</dt><dd>${fmt(adr.distBlur)} m du centre du disque flouté</dd>` : ''}
         ${P.parcelle ? `<dt>Parcelle</dt><dd>${esc(P.parcelle.sec)} ${esc(String(P.parcelle.num).replace(/^0+/, ''))} · ${fmt(P.parcelle.m2)} m²${(() => { const pb = VA.parcelleDe(P, bS); return pb && pb.id !== P.parcelle.id ? ` (point de l’adresse) · bâtiment sur ${esc(pb.sec)} ${esc(String(pb.num).replace(/^0+/, ''))} · ${fmt(pb.m2)} m²` : ''; })()}</dd>` : ''}
         ${bS ? `<dt>Bâtiment (IGN)</dt><dd>${bS.h ? bS.h + ' m de haut' : 'hauteur inconnue'}${bS.nl ? ' · ' + bS.nl + ' logement' + (bS.nl > 1 ? 's' : '') : ''}${bS.zs != null ? ' · sol à ' + bS.zs + ' m' : ''}${ori ? ' · grand côté ' + ori.art : ''}</dd>` : ''}
@@ -186,7 +186,7 @@ function secSoleil(P, est, ctx) {
       ${(() => { const pb = VA.parcelleDe(P, bS); if (!pb || !pb.g || !pb.g.length) return ''; const ring = VA.geo.closed(pb.g[0]); const n = (P.carte.bati || []).filter(b => b.h >= 2.8 && VA.geo.inPoly(b.c, ring)).length; return n > 1 ? `<p class="note">La parcelle porte ${n} bâtiments : le calcul vise le plus probable (voir « Bâtiments de la parcelle »), à confirmer sur place.</p>` : ''; })()}
       <p id="sunRead" style="margin:4px 0 2px"></p><p id="sunJ" style="margin:0 0 10px"></p>
       ${ctx.standalone ? '' : `<div class="row noprint" style="margin:0 0 10px"><button class="btn-s btn-d" data-act="sun3d">Voir en 3D : bâtiments, relief et ombres</button><button class="btn-s" data-act="sunplay">▶ Jouer la journée</button><span class="note" id="sun3dInfo"></span></div><div id="sun3d" class="noprint" style="display:none;margin:0 0 12px;border-radius:10px;overflow:hidden;background:#eaf2fb"></div>`}
-      <div class="tbl"><table><thead><tr><th>Saison</th><th>Lever · coucher</th><th>Soleil direct sur la façade sud / terrasse (hors relief lointain et arbres)</th></tr></thead><tbody>${rowsTbl}</tbody></table></div>
+      <div class="tbl"><table><thead><tr><th>Saison</th><th>Lever · coucher</th><th>${A.type === 'A' ? 'Soleil direct sur la façade sud de l’immeuble' + (A.etage > 0 ? ', à l’étage ' + A.etage : '') + ' (si le logement y donne ; hors relief lointain et arbres)' : 'Soleil direct sur la façade sud / terrasse (hors relief lointain et arbres)'}</th></tr></thead><tbody>${rowsTbl}</tbody></table></div>
       <p class="note" style="margin-top:8px">Ombres calculées sur les hauteurs de la BD TOPO, sol plat autour de chaque bâtiment ; la différence d’altitude entre le bien et ses voisins est prise en compte pour la terrasse. Le relief lointain et la végétation ne sont pas mesurés ici. Heures légales (Paris).</p>
     </div></section>`;
 }
@@ -348,7 +348,8 @@ VA.wireDossier = function (root, P, ctx) {
     if (x.nuit) { if (gSun) gSun.innerHTML = ''; if (read) read.innerHTML = `<b>${S.hhmm(hour)}, ${s.lab}</b> : le soleil est couché.`; if (jEl) jEl.innerHTML = ''; return; }
     if (gSun) { const d = S.shadows(x.el, x.az, px); const sp = px([Math.max(-238, Math.min(238, 215 * Math.sin(x.az * Math.PI / 180))), Math.max(-214, Math.min(214, 215 * Math.cos(x.az * Math.PI / 180)))]); gSun.innerHTML = `<path d="${d}" fill="rgba(28,36,80,.34)" fill-rule="nonzero"/><g><circle cx="${sp[0].toFixed(1)}" cy="${sp[1].toFixed(1)}" r="8" fill="#f2b705" stroke="#fff" stroke-width="1.5"/><text x="${sp[0].toFixed(1)}" y="${(sp[1] + 20).toFixed(1)}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#15171c">soleil ${Math.round(x.az)}°</text></g>`; }
     if (read) read.innerHTML = `<b>${S.hhmm(hour)}, ${s.lab}</b> : soleil ${dirs[Math.round(x.az / 45) % 8]} (azimut ${Math.round(x.az)}°), ${Math.round(x.el)}° au-dessus de l’horizon ; une maison de 7 m porte une ombre de ${Math.round(Math.min(7 / Math.tan(x.el * Math.PI / 180), 560))} m.`;
-    if (jEl) jEl.innerHTML = S.sujet && !S.sud.length ? '<span class="sun-na">Terrasse non identifiable (bâtiments accolés) : les ombres sont dessinées, pas l’état de la terrasse.</span>' : S.sujet ? `Façade sud / terrasse du bien : ${x.jd === 'ok' ? '<span class="sun-ok">au soleil</span>' : x.jd === 'ombre' ? '<span class="sun-no">à l’ombre ' + x.who.join(' et ') + '</span>' : x.jd === 'partiel' ? '<span class="sun-no">en partie à l’ombre ' + x.who.join(' et ') + '</span>' : '<span class="sun-na">non calculable</span>'}.` : '<span class="sun-na">Bâtiment du bien non identifié : les ombres sont dessinées, pas l’état de la terrasse.</span>'; };
+    const facLab = P.annonce && P.annonce.type === 'A' ? 'Façade sud de l’immeuble' + (P.annonce.etage > 0 ? ' à l’étage ' + P.annonce.etage : '') : 'Façade sud / terrasse du bien';
+    if (jEl) jEl.innerHTML = S.sujet && !S.sud.length ? '<span class="sun-na">Façade sud non identifiable (bâtiments accolés) : les ombres sont dessinées, pas l’état de la façade.</span>' : S.sujet ? `${facLab} : ${x.jd === 'ok' ? '<span class="sun-ok">au soleil</span>' : x.jd === 'ombre' ? '<span class="sun-no">à l’ombre ' + x.who.join(' et ') + '</span>' : x.jd === 'partiel' ? '<span class="sun-no">en partie à l’ombre ' + x.who.join(' et ') + '</span>' : '<span class="sun-na">non calculable</span>'}.` : '<span class="sun-na">Bâtiment du bien non identifié : les ombres sont dessinées, pas l’état de la terrasse.</span>'; };
   root.querySelectorAll('#sunSeason button').forEach(b => b.addEventListener('click', () => { season = b.dataset.s; root.querySelectorAll('#sunSeason button').forEach(o => o.setAttribute('aria-pressed', o === b)); render(); }));
   const slider = root.querySelector('#sunHour'); if (slider) slider.addEventListener('input', () => { hour = +slider.value; render(); });
   render();

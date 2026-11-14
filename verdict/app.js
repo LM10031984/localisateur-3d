@@ -230,6 +230,35 @@ routes.rdv = async (id) => {
   $('#adjAdd').addEventListener('click', () => { const arr = collect(); arr.push({on: true, l: '', p: 0}); setAdj(id, arr); routes.rdv(id); });
 };
 
+/* ---------- écran : point marché (propriétaire consentant) ---------- */
+routes.pm = async (id) => {
+  const {energieLib} = VA;
+  const P = id && await DB.get(id); if (!P) { view('<div class="card">Choisissez d’abord un dossier. <a href="#dossiers">Mes dossiers</a></div>'); return; }
+  const A = P.annonce; const est = VA.estimer(P, adjOf(id)); const R = reglages(); const N = notesOf(id);
+  const V = VA.ventes(P).filter(v => v.km <= 200).sort((a, b) => a.d < b.d ? 1 : -1).slice(0, 3);
+  const d = P.adresse && P.adresse.dpe; const C = VA.copros(P).find(c => c.sujet); const adr = d ? niceAdr(d.adr) : (P.centre.label || A.ville || '');
+  const type = VA.typeBien(P); const S = est && est.S;
+  const mois = new Date().toLocaleDateString('fr-FR', {month: 'long', year: 'numeric'});
+  const txt = `${R.agence || '[Votre agence]'} · ${R.conseiller || '[Votre nom]'}\nPoint marché · ${mois}\n\nBonjour,\n\nComme convenu, voici le point marché de ${mois} pour votre ${type === 'M' ? 'maison' : 'appartement'}${adr ? ' — ' + adr : ''}.\n\n` +
+    (est && est.valeur ? `Valeur aujourd’hui : autour de ${eur(est.valeurAj || est.valeur)} (huit cas sur dix entre ${kE(est.fourchette[0])} et ${kE(est.fourchette[1])}), d’après ${est.n} ventes de ${type === 'M' ? 'maisons' : 'appartements'} à moins de 800 m depuis ${new Date().getFullYear() - 6}, recalées à aujourd’hui. Tendance du secteur : ${pct(est.slope, 1)} par an.\n\n` : `Le secteur compte ${P.marche ? P.marche.n800 : 0} ventes à moins de 800 m depuis ${P.marche && P.marche.years[0]}.\n\n`) +
+    (V.length ? `Dernières ventes à moins de 200 m :\n${V.map(v => `• ${monthFr(v.d)} — ${v.t === 'M' ? 'maison' : 'appartement'} ${fmt(v.s)} m²${v.a ? ', ' + niceAdr(v.a) : ''} : ${eur(v.pk * 1000)} (${m2(v.pm2)})`).join('\n')}\n\n` : '') +
+    (d && d.l ? `Énergie : votre DPE est classé ${d.l} (${fr1(d.kwh)} kWh/m²/an)${'EFG'.includes(d.l) && /lectri/i.test(energieLib(d.energie)) && d.date < '2026-01-01' ? ' ; depuis le 1er janvier 2026, le coefficient de l’électricité a changé : une nouvelle étiquette, souvent meilleure, peut être demandée sans refaire le diagnostic' : 'EFG'.includes(d.l) ? ' ; les règles de location se durcissent (G interdit depuis 2025, F en 2028, E en 2034)' : ' : pas de contrainte réglementaire en vue'}.\n\n` : '') +
+    (C ? `Copropriété ${C.nom || ''} : ${C.lotsH} lots d’habitation, syndic ${C.syndic || C.typeSyndic || '–'}${C.fin ? ', fin de mandat le ' + dateFr(C.fin) : ''}.\n\n` : '') +
+    `Je reste à votre disposition pour en parler, sans engagement.\n\n${R.conseiller || ''}${R.tel ? ' · ' + R.tel : ''}${R.email ? ' · ' + R.email : ''}\n\nVous recevez ce point marché parce que vous l’avez demandé (${N.consent || 'QR code / site / courrier'}${N.consentDate ? ', le ' + dateFr(N.consentDate) : ''}). Un mot suffit pour ne plus le recevoir.`;
+  view(`<div class="sec-h"><span class="n">Point marché</span><h1>${esc(VA.titreDossier(P))}</h1><p><a href="#d/${esc(id)}">← dossier</a></p></div>
+    <div class="grid g2"><div class="card"><div class="sec-h"><h3>Le texte du mois</h3><p>Généré depuis le dossier : valeur, ventes de la rue, énergie, copropriété. À relire, puis à copier dans votre e-mail ou votre courrier.</p></div>
+      <textarea id="pmTxt" rows="22" style="font-family:var(--font)">${esc(txt)}</textarea><div class="row" style="margin-top:8px"><button class="btn-p" id="pmCopy">Copier</button><button class="btn-s" id="pmPrint">Imprimer</button></div></div>
+    <div class="card"><div class="sec-h"><h3>Accord du propriétaire</h3><p>Le point marché n’est envoyé qu’à un propriétaire qui l’a demandé. Notez comment et quand ; c’est votre registre de consentement.</p></div>
+      <label class="f">Comment<select id="pmHow"><option ${N.consent === 'QR code' ? 'selected' : ''}>QR code</option><option ${N.consent === 'estimation sur le site' ? 'selected' : ''}>estimation sur le site</option><option ${N.consent === 'réponse à un courrier' ? 'selected' : ''}>réponse à un courrier</option><option ${N.consent === 'rendez-vous' ? 'selected' : ''}>rendez-vous</option></select></label>
+      <label class="f" style="margin-top:8px">Date de l’accord<input type="date" id="pmDate" value="${esc(N.consentDate || '')}"></label>
+      <label class="f" style="margin-top:8px">Canal<select id="pmChan"><option ${N.chan === 'e-mail' ? 'selected' : ''}>e-mail</option><option ${N.chan === 'courrier' ? 'selected' : ''}>courrier</option></select></label>
+      <label class="f" style="margin-top:8px">Prochain point<input type="date" id="pmNext" value="${esc(N.next || '')}"></label>
+      <div class="row" style="margin-top:10px"><button class="btn-s" id="pmSave">Enregistrer</button><span class="note">Jamais de nom ni de téléphone récupérés ailleurs : seulement ce que le propriétaire vous a donné.</span></div></div></div>`);
+  $('#pmCopy').addEventListener('click', () => navigator.clipboard.writeText($('#pmTxt').value).then(() => toast('Point marché copié.')));
+  $('#pmPrint').addEventListener('click', () => { const w = window.open('', '_blank'); w.document.write('<pre style="font:14px/1.5 system-ui;white-space:pre-wrap;max-width:720px;margin:40px auto">' + esc($('#pmTxt').value) + '</pre>'); w.document.close(); w.print(); });
+  $('#pmSave').addEventListener('click', () => { setNotes(id, {consent: $('#pmHow').value, consentDate: $('#pmDate').value, chan: $('#pmChan').value, next: $('#pmNext').value}); toast('Accord enregistré.'); });
+};
+
 /* ---------- écran : réglages ---------- */
 routes.reglages = () => {
   const R = reglages();

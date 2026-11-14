@@ -100,7 +100,7 @@ async function collect(input, onStep) {
       const g = (r._geopoint || '').split(','); const la = +g[0], lo = +g[1];
       let s = 0; const why = [];
       if (d.date && r.date_etablissement_dpe === d.date) { s += 3; why.push('même date'); }
-      if (d.kwh != null && r.conso_5_usages_par_m2_ep != null && Math.abs(r.conso_5_usages_par_m2_ep - d.kwh) <= 0.6) { s += 2; why.push('mêmes kWh'); }
+      if (d.kwh != null && r.conso_5_usages_par_m2_ep != null) { const dk = Math.abs(r.conso_5_usages_par_m2_ep - d.kwh); if (dk <= 0.6) { s += 2; why.push('mêmes kWh'); } else if (dk <= 2) { s += 1; why.push('kWh proches'); } else if (dk > 15) s -= 1; }
       if (d.ges != null && r.emission_ges_5_usages_par_m2 != null && Math.abs(r.emission_ges_5_usages_par_m2 - d.ges) <= 0.6) { s += 2; why.push('même GES'); }
       if (d.cmin && d.cmax && r.cout_total_5_usages >= d.cmin - 1 && r.cout_total_5_usages <= d.cmax + 1) { s += 1; why.push('coût dans la fourchette'); }
       const ratio = (A.surface && r.surface_habitable_logement) ? r.surface_habitable_logement / A.surface : null;
@@ -231,8 +231,14 @@ async function collect(input, onStep) {
     if (im && !data.some(c => c.numero_immatriculation === im)) { const r2 = await j(base + 'numero_immatriculation__exact=' + encodeURIComponent(im)).catch(() => null); if (r2 && r2.data.length) data = data.concat(r2.data); }
     const per = v => (v || '').replace(/_/g, ' ').replace(/^DE /i, '').replace(/ (A|à) /i, '-').replace(/[AÀ] COMPTER DE (\d+)/i, 'depuis $1').replace(/AVANT (\d+)/i, 'avant $1').replace(/APRES (\d+)/i, 'après $1').toLowerCase();
     const adr = v => txt((v || '').split(',')[0].replace(/\s+\d{4,5}\s.*$/, '').toLowerCase().replace(/(^|\s)\S/g, m => m.toUpperCase()), 40);
-    P.copros = data.filter(c => c.latitude || c.numero_immatriculation === im).map(c => { const o = c.latitude ? off(+c.latitude, +c.longitude) : [0, 0];
-      return [c.numero_immatriculation, txt(c.nom_usage_copropriete, 40), adr(c.numero_voie_adresse || c.adresse_reference), +c.nombre_lots_habitation || 0, +c.nombre_total_lots || 0, txt(per(c.periode_construction), 16), c.type_syndic || '', txt(c.raison_sociale_representant_legal, 36), c.mandat_en_cours === 'Mandat en cours' ? 1 : 0, c.date_fin_dernier_mandat || '', o[0], o[1], c.numero_immatriculation === im ? 1 : 0, c.date_immatriculation || '']; })
+    // sans immatriculation dans le DPE : rapprochement par l'adresse (numéro + premier mot significatif de la voie) à moins de 80 m
+    let imAdr = null;
+    if (!im && adresse.trouvee && adresse.dpe && adresse.dpe.adr) { const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); const a = norm(adresse.dpe.adr); const mnum = a.match(/^(\d+)/); const words = a.replace(/^\d+\s*(bis|ter)?\s*/, '').split(/[^a-z]+/).filter(w => w.length > 3 && !['avenue', 'boulevard', 'chemin', 'route', 'impasse', 'allee', 'place', 'rue', 'montee', 'quartier', 'residence'].includes(w));
+      const cand = data.filter(c => c.latitude && dist(lat0, lon0, +c.latitude, +c.longitude) < 80).map(c => { const ca = norm(c.numero_voie_adresse || c.adresse_reference || ''); let sc = 0; if (mnum && new RegExp('(^|\\D)' + mnum[1] + '(\\D|$)').test(ca)) sc += 2; words.forEach(w => { if (ca.includes(w)) sc += 1; }); return {c, sc, d: dist(lat0, lon0, +c.latitude, +c.longitude)}; }).filter(x => x.sc >= 2).sort((x, y) => y.sc - x.sc || x.d - y.d);
+      if (cand.length && (A.copro && A.copro.is !== false)) { imAdr = cand[0].c.numero_immatriculation; adresse.coproParAdresse = true; } }
+    const imS = im || imAdr;
+    P.copros = data.filter(c => c.latitude || c.numero_immatriculation === imS).map(c => { const o = c.latitude ? off(+c.latitude, +c.longitude) : [0, 0];
+      return [c.numero_immatriculation, txt(c.nom_usage_copropriete, 40), adr(c.numero_voie_adresse || c.adresse_reference), +c.nombre_lots_habitation || 0, +c.nombre_total_lots || 0, txt(per(c.periode_construction), 16), c.type_syndic || '', txt(c.raison_sociale_representant_legal, 36), c.mandat_en_cours === 'Mandat en cours' ? 1 : 0, c.date_fin_dernier_mandat || '', o[0], o[1], c.numero_immatriculation === imS ? 1 : 0, c.date_immatriculation || '']; })
       .sort((a, b) => (b[12] - a[12]) || (Math.hypot(a[10], a[11]) - Math.hypot(b[10], b[11]))).slice(0, 60);
   }));
 

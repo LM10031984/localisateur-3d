@@ -153,7 +153,8 @@ VA.sun = function (P) {
   const shadedBy = (el, az) => {
     if (!sud.length || el <= 0.5 || !bS) return null;
     const [ux, uy] = vec(el, az); let hits = 0; const who = {};
-    sud.forEach(pt => { for (const b of B) { if (b === bS || attached.includes(b)) continue; const h = ((b.zs != null && bS.zs != null) ? b.zs - bS.zs : 0) + (b.h || 3); if (h <= 0.3) continue; const vx = ux * h, vy = uy * h; let hit = false;
+    const floorH = (P.annonce && P.annonce.type === 'A' && P.annonce.etage > 0) ? Math.min(P.annonce.etage * 3, Math.max(0, (bS.h || 3) - 2)) : 0; // appartement : on regarde à la hauteur de l'étage
+    sud.forEach(pt => { for (const b of B) { if (b === bS || attached.includes(b)) continue; const h = ((b.zs != null && bS.zs != null) ? b.zs - bS.zs : 0) + (b.h || 3) - floorH; if (h <= 0.3) continue; const vx = ux * h, vy = uy * h; let hit = false;
       for (const r0 of b.g) { const r = closed(r0); if (inPoly(pt, r.map(([x, y]) => [x + vx, y + vy]))) { hit = true; break; } for (let i = 0; i < r.length && !hit; i++) { const a = r[i], c = r[(i + 1) % r.length]; if (inPoly(pt, [a, c, [c[0] + vx, c[1] + vy], [a[0] + vx, a[1] + vy]])) hit = true; } }
       if (hit) { hits++; const d = Math.round(Math.hypot(b.c[0] - bS.c[0], b.c[1] - bS.c[1])); who[(b.nl > 2 ? 'd’un immeuble' : 'd’un bâtiment') + ' voisin à ' + d + ' m'] = 1; break; } } });
     return {part: hits / sud.length, who: Object.keys(who)};
